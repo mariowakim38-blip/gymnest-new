@@ -142,15 +142,23 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
-  const logout = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-    } catch (error) {
-      console.error('Logout failed:', error);
+ const logout = async () => {
+  try {
+    await supabase.auth.signOut();
+
+    setUser(null);
+    setIsAuthenticated(false);
+
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
     }
-  }, []);
+
+    router.replace('/auth/login');
+  } catch (error) {
+    console.log('Logout error:', error);
+  }
+};
 
   const register = useCallback(async (
     name: string,
