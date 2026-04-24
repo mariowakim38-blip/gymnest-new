@@ -38,17 +38,26 @@ export default function ProfileScreen() {
   const [editChildren, setEditChildren] = useState<{ id: string; name: string; age: number }[]>([]);
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-        },
+  Alert.alert('Logout', 'Are you sure you want to logout?', [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Logout',
+      style: 'destructive',
+      onPress: async () => {
+        await logout();
+
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.localStorage.removeItem('users');
+          window.localStorage.removeItem('currentUser');
+          window.localStorage.clear();
+          window.location.href = '/';
+        } else {
+          router.replace('/auth/login' as Href);
+        }
       },
-    ]);
-  };
+    },
+  ]);
+};
 
   const openEditModal = () => {
     if (user) {
