@@ -307,8 +307,26 @@ export default function AdminPanel() {
     }
   };
 
-  const handleMarkAttendance = async (bookingId: string, attended?: boolean) => {
-    await markAttendanceMutation.mutateAsync({ bookingId, attended: attended ?? false });
+  const handleMarkAttendance = async (bookingId: string, attended: boolean) => {
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        attended,
+        attendance_marked_at: new Date().toISOString(),
+      })
+      .eq('id', bookingId);
+
+    if (error) {
+      console.error('Attendance update error:', error);
+      if (Platform.OS === 'web') {
+        alert(error.message);
+      } else {
+        Alert.alert('Attendance Error', error.message);
+      }
+      return;
+    }
+
+    await refreshBookings();
   };
 
   const handleAddAnnouncement = () => {
@@ -555,6 +573,44 @@ export default function AdminPanel() {
   const getBookingsForClassDate = (classId: string, classDate: string) => {
     return bookings.filter(b => b.classId === classId && b.status !== 'cancelled' && b.classDate === classDate);
   };
+
+  const getChildAndParent = (booking: any) => {
+    const parent = allUsers.find((u) => String(u.id) === String(booking.profileId));
+    const child = parent?.children?.find((c: any) => String(c.id) === String(booking.childId));
+
+    return {
+      parentName: parent?.name ?? 'Unknown parent',
+      childName: child?.name ?? 'Unknown child',
+    };
+  };
+
+  const attendanceGroups = Object.values(
+    bookings
+      .filter((booking: any) => booking.status !== 'cancelled')
+      .reduce((acc: any, booking: any) => {
+        const key = `${booking.classDate}-${booking.classId}`;
+
+        if (!acc[key]) {
+          acc[key] = {
+            key,
+            date: booking.classDate,
+            classId: booking.classId,
+            className: booking.className ?? getClassName(booking.classId),
+            classDay: booking.classDay ?? '',
+            classTime: booking.classTime ?? '',
+            classDuration: booking.classDuration ?? '',
+            students: [],
+          };
+        }
+
+        acc[key].students.push(booking);
+        return acc;
+      }, {})
+  ).sort((a: any, b: any) => {
+    const dateDiff = safeDate(a.date).getTime() - safeDate(b.date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return String(a.classTime).localeCompare(String(b.classTime));
+  });
 
   if (user?.role !== 'admin') return null;
 
@@ -906,45 +962,105 @@ export default function AdminPanel() {
 
         {activeTab === 'attendance' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Attendance</Text>
-            <View style={styles.classSelector}>
-              <Text style={styles.label}>Select Class:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {filterClassesByDate().map((cls) => (
-                  <TouchableOpacity key={cls.id} style={[styles.classChip, selectedClassId === cls.id && styles.classChipActive]} onPress={() => setSelectedClassId(cls.id)}>
-                    <Text style={[styles.classChipText, selectedClassId === cls.id && styles.classChipTextActive]}>{cls.name} - {(cls as any).age_group ?? (cls as any).ageGroup}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-            {selectedClassId && getClassDates(selectedClassId).length > 0 && (
-              <View style={styles.dateSelector}>
-                <Text style={styles.label}>Select Date:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {getClassDates(selectedClassId).map((date: string) => (
-                    <TouchableOpacity key={date} style={[styles.dateChip, selectedClassDate === date && styles.dateChipActive]} onPress={() => setSelectedClassDate(date)}>
-                      <Text style={[styles.dateChipText, selectedClassDate === date && styles.dateChipTextActive]}>{safeDate(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            {selectedClassId && selectedClassDate && (
+            <View style={styles.sectionHeader}>
               <View>
-                {getBookingsForClassDate(selectedClassId, selectedClassDate).map((booking) => {
-                  const [userId, childId] = booking.studentId.split('::');
-                  const parent = allUsers.find(u => u.id === userId);
-                  const child = parent?.children?.find(c => c.id === childId);
-                  return (
-                    <TouchableOpacity key={booking.id} style={[styles.attendanceCard, booking.attended === true && styles.attendanceCardPresent]} onPress={() => handleMarkAttendance(booking.id, booking.attended === true ? undefined : true)}>
-                      <View style={styles.attendanceInfo}>
-                        <Text style={styles.attendanceName}>{child?.name || 'Unknown'}</Text>
-                        {booking.attended === true && <Check color={Colors.success} size={20} />}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                <Text style={styles.sectionTitle}>Attendance</Text>
+                <Text style={styles.attendanceSubtitle}>Grouped by day, class, and hour</Text>
               </View>
+              <TouchableOpacity
+                style={styles.smallActionButton}
+                onPress={() => refreshBookings()}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.smallActionButtonText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {bookingsLoading ? (
+              <Text style={styles.emptyStateText}>Loading attendance...</Text>
+            ) : attendanceGroups.length === 0 ? (
+              <Text style={styles.emptyStateText}>No booked students found for attendance.</Text>
+            ) : (
+              attendanceGroups.map((group: any) => {
+                const d = safeDate(group.date);
+                const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+                const formattedDate = d.toLocaleDateString('en-US', {
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                });
+
+                const presentCount = group.students.filter((student: any) => student.attended === true).length;
+                const absentCount = group.students.filter((student: any) => student.attended === false).length;
+
+                return (
+                  <View key={group.key} style={styles.attendanceGroupCard}>
+                    <View style={styles.attendanceGroupHeader}>
+                      <View style={styles.attendanceGroupInfo}>
+                        <Text style={styles.attendanceGroupDate}>{dayName}, {formattedDate}</Text>
+                        <Text style={styles.attendanceGroupClass}>{group.className}</Text>
+                        <Text style={styles.attendanceGroupTime}>
+                          {group.classTime || 'No time'}{group.classDuration ? ` • ${group.classDuration}` : ''}
+                        </Text>
+                      </View>
+
+                      <View style={styles.attendanceStatsBox}>
+                        <Text style={styles.attendanceStatsText}>{presentCount} present</Text>
+                        <Text style={styles.attendanceStatsText}>{absentCount} absent</Text>
+                        <Text style={styles.attendanceStatsTotal}>{group.students.length} total</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.attendanceStudentList}>
+                      {group.students.map((booking: any) => {
+                        const { parentName, childName } = getChildAndParent(booking);
+
+                        return (
+                          <View key={booking.id} style={styles.attendanceStudentRow}>
+                            <View style={styles.attendanceStudentInfo}>
+                              <Text style={styles.attendanceName}>{childName}</Text>
+                              <Text style={styles.attendanceParentName}>Parent: {parentName}</Text>
+                              <Text style={styles.attendanceStatusText}>
+                                Status: {booking.attended === true ? 'Present' : booking.attended === false ? 'Absent' : 'Not marked'}
+                              </Text>
+                            </View>
+
+                            <View style={styles.attendanceButtonsRow}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.attendanceActionButton,
+                                  styles.presentButton,
+                                  booking.attended === true && styles.presentButtonActive,
+                                ]}
+                                onPress={() => handleMarkAttendance(booking.id, true)}
+                              >
+                                <Text style={[
+                                  styles.attendanceActionText,
+                                  booking.attended === true && styles.attendanceActionTextActive,
+                                ]}>Present</Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={[
+                                  styles.attendanceActionButton,
+                                  styles.absentButton,
+                                  booking.attended === false && styles.absentButtonActive,
+                                ]}
+                                onPress={() => handleMarkAttendance(booking.id, false)}
+                              >
+                                <Text style={[
+                                  styles.attendanceActionText,
+                                  booking.attended === false && styles.attendanceActionTextActive,
+                                ]}>Absent</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })
             )}
           </View>
         )}
@@ -1476,6 +1592,111 @@ const styles = StyleSheet.create({
     fontWeight: 'bold' as const,
     color: Colors.darkGray,
   },
+  attendanceSubtitle: {
+    fontSize: 13,
+    color: Colors.mediumGray,
+    marginTop: 4,
+  },
+  attendanceGroupCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  attendanceGroupHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'flex-start' as const,
+    gap: 12,
+    marginBottom: 12,
+  },
+  attendanceGroupInfo: { flex: 1 },
+  attendanceGroupDate: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: Colors.darkGray,
+    marginBottom: 4,
+  },
+  attendanceGroupClass: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    marginBottom: 2,
+  },
+  attendanceGroupTime: {
+    fontSize: 13,
+    color: Colors.mediumGray,
+  },
+  attendanceStatsBox: {
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    padding: 10,
+    minWidth: 100,
+  },
+  attendanceStatsText: {
+    fontSize: 12,
+    color: Colors.darkGray,
+    marginBottom: 2,
+  },
+  attendanceStatsTotal: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+    marginTop: 3,
+  },
+  attendanceStudentList: { gap: 8 },
+  attendanceStudentRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.background,
+  },
+  attendanceStudentInfo: { flex: 1 },
+  attendanceParentName: {
+    fontSize: 12,
+    color: Colors.mediumGray,
+    marginTop: 2,
+  },
+  attendanceStatusText: {
+    fontSize: 12,
+    color: Colors.darkGray,
+    marginTop: 4,
+    fontWeight: '600' as const,
+  },
+  attendanceButtonsRow: {
+    flexDirection: 'row' as const,
+    gap: 8,
+  },
+  attendanceActionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  presentButton: {
+    borderColor: Colors.success,
+    backgroundColor: Colors.white,
+  },
+  presentButtonActive: { backgroundColor: Colors.success },
+  absentButton: {
+    borderColor: Colors.danger,
+    backgroundColor: Colors.white,
+  },
+  absentButtonActive: { backgroundColor: Colors.danger },
+  attendanceActionText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: Colors.darkGray,
+  },
+  attendanceActionTextActive: { color: Colors.white },
   modal: {
     position: 'absolute' as const,
     top: 0,
