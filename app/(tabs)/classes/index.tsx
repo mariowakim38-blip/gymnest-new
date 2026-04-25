@@ -72,6 +72,10 @@ export default function ClassesScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
+  const openMonthlyBuilder = () => {
+    router.push('/(tabs)/classes/monthly-plan' as Href);
+  };
+
   useEffect(() => {
     const fetchClasses = async () => {
       setIsLoading(true);
@@ -163,17 +167,24 @@ export default function ClassesScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.hero}>
-        <View>
-          <View style={styles.heroPill}>
-            <Sparkles color={Colors.primary} size={15} />
-            <Text style={styles.heroPillText}>Choose your training day</Text>
-          </View>
-
-          <Text style={styles.title}>Weekly Class Schedule</Text>
-          <Text style={styles.subtitle}>
-            Pick a day, choose your class time, then book your 4 sessions.
-          </Text>
+        <View style={styles.heroPill}>
+          <Sparkles color={Colors.primary} size={15} />
+          <Text style={styles.heroPillText}>Choose your monthly training plan</Text>
         </View>
+
+        <Text style={styles.title}>Weekly Class Schedule</Text>
+        <Text style={styles.subtitle}>
+          Start by choosing your monthly package, then build your weekly schedule.
+        </Text>
+
+        <TouchableOpacity
+          style={styles.bookClassButton}
+          onPress={openMonthlyBuilder}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.bookClassButtonText}>Book a Class</Text>
+          <Text style={styles.bookClassButtonSubtext}>Choose package & monthly schedule</Text>
+        </TouchableOpacity>
       </View>
 
       {isLoading ? (
@@ -233,7 +244,7 @@ export default function ClassesScreen() {
               <View>
                 <Text style={styles.selectedTitle}>{selectedDay}</Text>
                 <Text style={styles.selectedSubtitle}>
-                  {selectedDayClasses.length} available class times
+                  Preview class times, then press Book a Class to create your monthly plan.
                 </Text>
               </View>
             </View>
@@ -248,9 +259,8 @@ export default function ClassesScreen() {
                 <TouchableOpacity
                   key={cls.id}
                   activeOpacity={0.86}
-                  disabled={isFull}
                   style={[styles.classCard, isFull && styles.classCardFull]}
-                  onPress={() => router.push(`/(tabs)/classes/${cls.id}` as Href)}
+                  onPress={openMonthlyBuilder}
                 >
                   <View style={styles.timeRail}>
                     <Text style={styles.startTime}>{cls.time}</Text>
@@ -313,7 +323,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F4F7FB',
   },
-
   hero: {
     backgroundColor: Colors.white,
     paddingHorizontal: 18,
@@ -322,7 +331,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-
   heroPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -334,38 +342,57 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     marginBottom: 12,
   },
-
   heroPillText: {
     color: Colors.primary,
     fontSize: 13,
     fontWeight: '700',
   },
-
   title: {
     fontSize: 25,
     fontWeight: '900',
     color: Colors.text,
     marginBottom: 6,
   },
-
   subtitle: {
     fontSize: 14,
     color: Colors.textLight,
     lineHeight: 20,
   },
-
+  bookClassButton: {
+    marginTop: 16,
+    backgroundColor: Colors.primary,
+    borderRadius: 18,
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  bookClassButtonText: {
+    color: Colors.white,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  bookClassButtonSubtext: {
+    color: '#EAF4FF',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 3,
+  },
   daysSection: {
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-
   daysContent: {
     paddingHorizontal: 14,
     paddingVertical: 14,
     gap: 10,
   },
-
   dayCard: {
     width: 122,
     paddingVertical: 14,
@@ -375,7 +402,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E3E8EF',
   },
-
   dayCardActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
@@ -385,67 +411,55 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
-
   dayShort: {
     fontSize: 13,
     color: Colors.textLight,
     fontWeight: '800',
     marginBottom: 4,
   },
-
   dayShortActive: {
     color: '#DCEEFF',
   },
-
   dayFull: {
     fontSize: 17,
     color: Colors.text,
     fontWeight: '900',
   },
-
   dayFullActive: {
     color: Colors.white,
   },
-
   dayCount: {
     marginTop: 5,
     color: Colors.textLight,
     fontSize: 12,
     fontWeight: '600',
   },
-
   dayCountActive: {
     color: '#EAF4FF',
   },
-
   scheduleList: {
     flex: 1,
   },
-
   scheduleContent: {
     padding: 16,
     paddingBottom: 32,
   },
-
   selectedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginBottom: 14,
   },
-
   selectedTitle: {
     fontSize: 20,
     fontWeight: '900',
     color: Colors.text,
   },
-
   selectedSubtitle: {
     fontSize: 13,
     color: Colors.textLight,
     marginTop: 1,
   },
-
   classCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -462,23 +476,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-
   classCardFull: {
     opacity: 0.55,
   },
-
   timeRail: {
     width: 78,
     alignItems: 'center',
   },
-
   startTime: {
     fontSize: 15,
     fontWeight: '900',
     color: Colors.primary,
     textAlign: 'center',
   },
-
   timeLine: {
     width: 2,
     height: 34,
@@ -486,84 +496,68 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     borderRadius: 2,
   },
-
   endTime: {
     fontSize: 12,
     color: Colors.textLight,
     fontWeight: '700',
     textAlign: 'center',
   },
-
   classMain: {
     flex: 1,
   },
-
   classTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: 10,
   },
-
   classTitleWrap: {
     flex: 1,
   },
-
   className: {
     fontSize: 17,
     fontWeight: '900',
     color: Colors.text,
     marginBottom: 3,
   },
-
   classMeta: {
     fontSize: 13,
     color: Colors.textLight,
     fontWeight: '600',
   },
-
   classDescription: {
     marginTop: 8,
     fontSize: 13,
     color: Colors.textLight,
     lineHeight: 18,
   },
-
   levelBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
-
   beginnerBadge: {
     backgroundColor: '#E3F2FD',
   },
-
   intermediateBadge: {
     backgroundColor: '#FFF3E0',
   },
-
   advancedBadge: {
     backgroundColor: '#FCE4EC',
   },
-
   levelText: {
     fontSize: 12,
     fontWeight: '900',
   },
-
   beginnerText: {
     color: '#1976D2',
   },
-
   intermediateText: {
     color: '#F57C00',
   },
-
   advancedText: {
     color: '#C2185B',
   },
-
   classBottomRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -571,7 +565,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 12,
   },
-
   infoChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -581,48 +574,40 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
-
   infoChipText: {
     fontSize: 12,
     color: Colors.textLight,
     fontWeight: '700',
   },
-
   statusPill: {
     backgroundColor: '#E8F8EF',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
-
   statusPillFull: {
     backgroundColor: '#FDECEC',
   },
-
   statusText: {
     color: '#16A34A',
     fontSize: 12,
     fontWeight: '900',
   },
-
   statusTextFull: {
     color: '#DC2626',
   },
-
   centerState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
   },
-
   centerText: {
     marginTop: 12,
     fontSize: 15,
     color: Colors.textLight,
     textAlign: 'center',
   },
-
   errorText: {
     fontSize: 15,
     color: Colors.error,
