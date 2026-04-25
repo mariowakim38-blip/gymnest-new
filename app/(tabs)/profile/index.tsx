@@ -44,7 +44,33 @@ export default function ProfileScreen() {
       text: 'Logout',
       style: 'destructive',
       onPress: async () => {
-        await logout();
+        try {
+          console.log('Logging out...');
+
+          await logout();
+
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            window.localStorage.clear();
+            window.sessionStorage.clear();
+            window.location.replace('/auth/login');
+          } else {
+            router.replace('/auth/login' as Href);
+          }
+        } catch (error) {
+          console.log('Logout error:', error);
+
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            window.localStorage.clear();
+            window.sessionStorage.clear();
+            window.location.replace('/auth/login');
+          } else {
+            router.replace('/auth/login' as Href);
+          }
+        }
+      },
+    },
+  ]);
+};
 
         if (Platform.OS === 'web' && typeof window !== 'undefined') {
           window.localStorage.removeItem('users');
