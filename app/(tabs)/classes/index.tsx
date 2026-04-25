@@ -33,12 +33,15 @@ export default function ClassesScreen() {
   const filteredClasses = classes.filter((cls: any) => {
     const name = cls.name || '';
     const ageGroup = cls.ageGroup || '';
+    const level = cls.level || '';
 
     const matchesSearch =
       name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ageGroup.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesLevel = selectedLevel === 'All' || cls.level === selectedLevel;
+    const matchesLevel =
+      selectedLevel === 'All' ||
+      level.toLowerCase().includes(selectedLevel.toLowerCase());
 
     return matchesSearch && matchesLevel;
   });
@@ -55,7 +58,10 @@ export default function ClassesScreen() {
       (booking) => booking.classId === classId && booking.status !== 'cancelled'
     );
 
-    const uniqueStudents = new Set(classBookings.map((booking) => booking.studentId));
+    const uniqueStudents = new Set(
+      classBookings.map((booking) => booking.studentId)
+    );
+
     return uniqueStudents.size;
   };
 
