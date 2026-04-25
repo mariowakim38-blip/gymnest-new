@@ -1,320 +1,73 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
-import {
-  Clock,
-  ChevronRight,
-  CalendarDays,
-  Sparkles,
-  Users as UsersIcon,
-} from 'lucide-react-native';
+import { Sparkles, CalendarDays, ArrowRight, CheckCircle2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useBooking } from '@/contexts/BookingContext';
-import { supabase } from '@/lib/supabase';
-
-const orderedDays = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
-
-const dayShort: Record<string, string> = {
-  Monday: 'Mon',
-  Tuesday: 'Tue',
-  Wednesday: 'Wed',
-  Thursday: 'Thu',
-  Friday: 'Fri',
-  Saturday: 'Sat',
-};
-
-const timeToMinutes = (timeValue: string) => {
-  if (!timeValue) return 0;
-
-  const [time, modifier] = timeValue.trim().split(' ');
-  let [hours, minutes] = time.split(':').map(Number);
-
-  if (modifier === 'PM' && hours !== 12) hours += 12;
-  if (modifier === 'AM' && hours === 12) hours = 0;
-
-  return hours * 60 + minutes;
-};
-
-const getEndTime = (startTime: string) => {
-  const start = timeToMinutes(startTime);
-  const end = start + 60;
-
-  let hours = Math.floor(end / 60);
-  const minutes = end % 60;
-  const modifier = hours >= 12 ? 'PM' : 'AM';
-
-  if (hours > 12) hours -= 12;
-  if (hours === 0) hours = 12;
-
-  return `${hours}:${String(minutes).padStart(2, '0')} ${modifier}`;
-};
 
 export default function ClassesScreen() {
   const router = useRouter();
-  const { bookings } = useBooking();
-
-  const [classes, setClasses] = useState<any[]>([]);
-  const [selectedDay, setSelectedDay] = useState<string>('Monday');
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
 
   const openMonthlyBuilder = () => {
     router.push('/(tabs)/classes/monthly-plan' as Href);
   };
 
-  useEffect(() => {
-    const fetchClasses = async () => {
-      setIsLoading(true);
-      setLoadError('');
-
-      const { data, error } = await supabase
-        .from('classes')
-        .select('*')
-        .order('day_of_week', { ascending: true });
-
-      if (error) {
-        console.error('CLASSES ERROR:', error);
-        setLoadError(error.message);
-        setClasses([]);
-        setIsLoading(false);
-        return;
-      }
-
-      const mappedClasses = (data ?? []).map((c: any) => ({
-        id: c.id,
-        name: c.name ?? '',
-        ageGroup: c.age_group ?? '',
-        level: c.level ?? '',
-        day: c.day ?? '',
-        time: c.time ?? '',
-        duration: c.duration ?? '1 hour',
-        capacity: c.capacity ?? 0,
-        enrolled: c.enrolled ?? 0,
-        description: c.description ?? '',
-        dayOfWeek: c.day_of_week ?? 0,
-      }));
-
-      setClasses(mappedClasses);
-
-      const firstAvailableDay = orderedDays.find((day) =>
-        mappedClasses.some((cls) => cls.day === day)
-      );
-
-      if (firstAvailableDay) {
-        setSelectedDay(firstAvailableDay);
-      }
-
-      setIsLoading(false);
-    };
-
-    fetchClasses();
-  }, []);
-
-  const getEnrolledCount = (classId: string) => {
-    const classBookings = bookings.filter(
-      (booking) => booking.classId === classId && booking.status !== 'cancelled'
-    );
-
-    const uniqueStudents = new Set(
-      classBookings.map((booking) => booking.studentId)
-    );
-
-    return uniqueStudents.size;
-  };
-
-  const groupedByDay = useMemo(() => {
-    return classes.reduce((acc: Record<string, any[]>, cls: any) => {
-      if (!acc[cls.day]) acc[cls.day] = [];
-      acc[cls.day].push(cls);
-      return acc;
-    }, {});
-  }, [classes]);
-
-  const availableDays = orderedDays.filter((day) => groupedByDay[day]?.length);
-
-  const selectedDayClasses = useMemo(() => {
-    return [...(groupedByDay[selectedDay] ?? [])].sort(
-      (a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)
-    );
-  }, [groupedByDay, selectedDay]);
-
-  const getLevelStyle = (level: string) => {
-    if (level?.toLowerCase().includes('beginner')) return styles.beginnerBadge;
-    if (level?.toLowerCase().includes('advanced')) return styles.advancedBadge;
-    return styles.intermediateBadge;
-  };
-
-  const getLevelTextStyle = (level: string) => {
-    if (level?.toLowerCase().includes('beginner')) return styles.beginnerText;
-    if (level?.toLowerCase().includes('advanced')) return styles.advancedText;
-    return styles.intermediateText;
-  };
-
   return (
-    <View style={styles.container}>
-      <View style={styles.hero}>
-        <View style={styles.heroPill}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.heroCard}>
+        <View style={styles.pill}>
           <Sparkles color={Colors.primary} size={15} />
-          <Text style={styles.heroPillText}>Choose your monthly training plan</Text>
+          <Text style={styles.pillText}>Monthly Training Plans</Text>
         </View>
 
-        <Text style={styles.title}>Weekly Class Schedule</Text>
+        <Text style={styles.title}>Build your child’s gymnastics schedule</Text>
         <Text style={styles.subtitle}>
-          Start by choosing your monthly package, then build your weekly schedule.
+          Choose a monthly package, select weekly training hours, then pick the start date.
         </Text>
 
-        <TouchableOpacity
-          style={styles.bookClassButton}
-          onPress={openMonthlyBuilder}
-          activeOpacity={0.88}
-        >
-          <Text style={styles.bookClassButtonText}>Book a Class</Text>
-          <Text style={styles.bookClassButtonSubtext}>Choose package & monthly schedule</Text>
+        <TouchableOpacity style={styles.mainButton} onPress={openMonthlyBuilder} activeOpacity={0.88}>
+          <View>
+            <Text style={styles.mainButtonText}>Book a Class</Text>
+            <Text style={styles.mainButtonSubtext}>Package • Weekly schedule • Start date</Text>
+          </View>
+          <ArrowRight color={Colors.white} size={23} />
         </TouchableOpacity>
       </View>
 
-      {isLoading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.centerText}>Loading schedule...</Text>
+      <View style={styles.infoCard}>
+        <CalendarDays color={Colors.primary} size={24} />
+        <View style={styles.infoTextWrap}>
+          <Text style={styles.infoTitle}>How booking works</Text>
+          <Text style={styles.infoText}>
+            You will choose monthly hours first, then select the exact days and times your child will attend every week.
+          </Text>
         </View>
-      ) : loadError ? (
-        <View style={styles.centerState}>
-          <Text style={styles.errorText}>Error: {loadError}</Text>
+      </View>
+
+      <View style={styles.rulesCard}>
+        <Text style={styles.rulesTitle}>Important class rules</Text>
+
+        <View style={styles.ruleRow}>
+          <CheckCircle2 color={Colors.success} size={18} />
+          <Text style={styles.ruleText}>Beginner class is 1 hour per day only.</Text>
         </View>
-      ) : availableDays.length === 0 ? (
-        <View style={styles.centerState}>
-          <Text style={styles.centerText}>No classes available yet.</Text>
+
+        <View style={styles.ruleRow}>
+          <CheckCircle2 color={Colors.success} size={18} />
+          <Text style={styles.ruleText}>Intermediate/Advanced can book multiple hours in the same day.</Text>
         </View>
-      ) : (
-        <>
-          <View style={styles.daysSection}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.daysContent}
-            >
-              {availableDays.map((day) => {
-                const isActive = selectedDay === day;
-                const count = groupedByDay[day]?.length ?? 0;
 
-                return (
-                  <TouchableOpacity
-                    key={day}
-                    activeOpacity={0.85}
-                    onPress={() => setSelectedDay(day)}
-                    style={[styles.dayCard, isActive && styles.dayCardActive]}
-                  >
-                    <Text style={[styles.dayShort, isActive && styles.dayShortActive]}>
-                      {dayShort[day]}
-                    </Text>
-                    <Text style={[styles.dayFull, isActive && styles.dayFullActive]}>
-                      {day}
-                    </Text>
-                    <Text style={[styles.dayCount, isActive && styles.dayCountActive]}>
-                      {count} classes
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          <ScrollView
-            style={styles.scheduleList}
-            contentContainerStyle={styles.scheduleContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.selectedHeader}>
-              <CalendarDays color={Colors.primary} size={22} />
-              <View>
-                <Text style={styles.selectedTitle}>{selectedDay}</Text>
-                <Text style={styles.selectedSubtitle}>
-                  Preview class times, then press Book a Class to create your monthly plan.
-                </Text>
-              </View>
-            </View>
-
-            {selectedDayClasses.map((cls: any) => {
-              const enrolled = getEnrolledCount(cls.id);
-              const capacity = cls.capacity || 12;
-              const isFull = capacity > 0 && enrolled >= capacity;
-              const endTime = getEndTime(cls.time);
-
-              return (
-                <TouchableOpacity
-                  key={cls.id}
-                  activeOpacity={0.86}
-                  style={[styles.classCard, isFull && styles.classCardFull]}
-                  onPress={openMonthlyBuilder}
-                >
-                  <View style={styles.timeRail}>
-                    <Text style={styles.startTime}>{cls.time}</Text>
-                    <View style={styles.timeLine} />
-                    <Text style={styles.endTime}>{endTime}</Text>
-                  </View>
-
-                  <View style={styles.classMain}>
-                    <View style={styles.classTopRow}>
-                      <View style={styles.classTitleWrap}>
-                        <Text style={styles.className}>{cls.name}</Text>
-                        <Text style={styles.classMeta}>{cls.ageGroup || 'Kids'}</Text>
-                      </View>
-
-                      <View style={[styles.levelBadge, getLevelStyle(cls.level)]}>
-                        <Text style={[styles.levelText, getLevelTextStyle(cls.level)]}>
-                          {cls.level || 'Class'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.classDescription} numberOfLines={2}>
-                      {cls.description || 'Gymnastics training class.'}
-                    </Text>
-
-                    <View style={styles.classBottomRow}>
-                      <View style={styles.infoChip}>
-                        <Clock color={Colors.mediumGray} size={15} />
-                        <Text style={styles.infoChipText}>{cls.duration || '1 hour'}</Text>
-                      </View>
-
-                      <View style={styles.infoChip}>
-                        <UsersIcon color={Colors.mediumGray} size={15} />
-                        <Text style={styles.infoChipText}>
-                          {enrolled}/{capacity} booked
-                        </Text>
-                      </View>
-
-                      <View style={[styles.statusPill, isFull && styles.statusPillFull]}>
-                        <Text style={[styles.statusText, isFull && styles.statusTextFull]}>
-                          {isFull ? 'Full' : 'Available'}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <ChevronRight color={isFull ? Colors.mediumGray : Colors.primary} size={22} />
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </>
-      )}
-    </View>
+        <View style={styles.ruleRow}>
+          <CheckCircle2 color={Colors.success} size={18} />
+          <Text style={styles.ruleText}>Calendar start date will only allow the days you selected.</Text>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -323,294 +76,125 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F4F7FB',
   },
-  hero: {
-    backgroundColor: Colors.white,
-    paddingHorizontal: 18,
-    paddingTop: 22,
-    paddingBottom: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+  content: {
+    padding: 18,
+    paddingBottom: 36,
   },
-  heroPill: {
+  heroCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 28,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: '#E5EAF1',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 6,
+    gap: 7,
     backgroundColor: '#EAF4FF',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  heroPillText: {
+  pillText: {
     color: Colors.primary,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   title: {
-    fontSize: 25,
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '900',
     color: Colors.text,
-    marginBottom: 6,
+    marginBottom: 10,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 15,
+    lineHeight: 22,
     color: Colors.textLight,
-    lineHeight: 20,
+    marginBottom: 20,
   },
-  bookClassButton: {
-    marginTop: 16,
+  mainButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 18,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
+    borderRadius: 20,
+    paddingVertical: 17,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowRadius: 14,
+    elevation: 5,
   },
-  bookClassButtonText: {
+  mainButtonText: {
     color: Colors.white,
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '900',
-    textAlign: 'center',
   },
-  bookClassButtonSubtext: {
+  mainButtonSubtext: {
     color: '#EAF4FF',
     fontSize: 12,
     fontWeight: '700',
-    textAlign: 'center',
     marginTop: 3,
   },
-  daysSection: {
+  infoCard: {
     backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  daysContent: {
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    gap: 10,
-  },
-  dayCard: {
-    width: 122,
-    paddingVertical: 14,
-    paddingHorizontal: 13,
-    borderRadius: 18,
-    backgroundColor: '#F2F4F7',
+    borderRadius: 22,
+    padding: 16,
+    marginTop: 16,
     borderWidth: 1,
-    borderColor: '#E3E8EF',
+    borderColor: '#E5EAF1',
+    flexDirection: 'row',
+    gap: 12,
   },
-  dayCardActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 4,
+  infoTextWrap: {
+    flex: 1,
   },
-  dayShort: {
-    fontSize: 13,
-    color: Colors.textLight,
-    fontWeight: '800',
+  infoTitle: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '900',
     marginBottom: 4,
   },
-  dayShortActive: {
-    color: '#DCEEFF',
-  },
-  dayFull: {
-    fontSize: 17,
-    color: Colors.text,
-    fontWeight: '900',
-  },
-  dayFullActive: {
-    color: Colors.white,
-  },
-  dayCount: {
-    marginTop: 5,
+  infoText: {
     color: Colors.textLight,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  dayCountActive: {
-    color: '#EAF4FF',
-  },
-  scheduleList: {
-    flex: 1,
-  },
-  scheduleContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  selectedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-  },
-  selectedTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Colors.text,
-  },
-  selectedSubtitle: {
     fontSize: 13,
-    color: Colors.textLight,
-    marginTop: 1,
+    lineHeight: 19,
   },
-  classCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
+  rulesCard: {
     backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 22,
+    padding: 16,
+    marginTop: 16,
     borderWidth: 1,
-    borderColor: '#E6EBF2',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
+    borderColor: '#E5EAF1',
   },
-  classCardFull: {
-    opacity: 0.55,
-  },
-  timeRail: {
-    width: 78,
-    alignItems: 'center',
-  },
-  startTime: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: Colors.primary,
-    textAlign: 'center',
-  },
-  timeLine: {
-    width: 2,
-    height: 34,
-    backgroundColor: '#D7E7F8',
-    marginVertical: 6,
-    borderRadius: 2,
-  },
-  endTime: {
-    fontSize: 12,
-    color: Colors.textLight,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  classMain: {
-    flex: 1,
-  },
-  classTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  classTitleWrap: {
-    flex: 1,
-  },
-  className: {
+  rulesTitle: {
+    color: Colors.text,
     fontSize: 17,
     fontWeight: '900',
-    color: Colors.text,
-    marginBottom: 3,
+    marginBottom: 12,
   },
-  classMeta: {
-    fontSize: 13,
-    color: Colors.textLight,
-    fontWeight: '600',
-  },
-  classDescription: {
-    marginTop: 8,
-    fontSize: 13,
-    color: Colors.textLight,
-    lineHeight: 18,
-  },
-  levelBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  beginnerBadge: {
-    backgroundColor: '#E3F2FD',
-  },
-  intermediateBadge: {
-    backgroundColor: '#FFF3E0',
-  },
-  advancedBadge: {
-    backgroundColor: '#FCE4EC',
-  },
-  levelText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  beginnerText: {
-    color: '#1976D2',
-  },
-  intermediateText: {
-    color: '#F57C00',
-  },
-  advancedText: {
-    color: '#C2185B',
-  },
-  classBottomRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  infoChip: {
+  ruleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#F5F7FA',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 999,
+    gap: 9,
+    marginBottom: 10,
   },
-  infoChipText: {
-    fontSize: 12,
-    color: Colors.textLight,
-    fontWeight: '700',
-  },
-  statusPill: {
-    backgroundColor: '#E8F8EF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  statusPillFull: {
-    backgroundColor: '#FDECEC',
-  },
-  statusText: {
-    color: '#16A34A',
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  statusTextFull: {
-    color: '#DC2626',
-  },
-  centerState: {
+  ruleText: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 30,
-  },
-  centerText: {
-    marginTop: 12,
-    fontSize: 15,
-    color: Colors.textLight,
-    textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 15,
-    color: Colors.error,
-    textAlign: 'center',
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 19,
   },
 });
