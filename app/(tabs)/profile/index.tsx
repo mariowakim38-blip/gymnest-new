@@ -37,55 +37,40 @@ export default function ProfileScreen() {
   const [editPhoneNumber, setEditPhoneNumber] = useState<string>('');
   const [editChildren, setEditChildren] = useState<{ id: string; name: string; age: number }[]>([]);
 
-const handleLogout = () => {
-  Alert.alert('Logout', 'Are you sure you want to logout?', [
-    { text: 'Cancel', style: 'cancel' },
-    {
-      text: 'Logout',
-      style: 'destructive',
-      onPress: async () => {
-        try {
-          console.log('Logging out...');
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            console.log('Logging out...');
 
-          await logout();
+            await logout();
 
-          if (Platform.OS === 'web' && typeof window !== 'undefined') {
-            window.localStorage.clear();
-            window.sessionStorage.clear();
-            window.location.replace('/auth/login');
-            return;
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+              window.localStorage.clear();
+              window.sessionStorage.clear();
+              window.location.replace('/auth/login');
+            } else {
+              router.replace('/auth/login' as Href);
+            }
+          } catch (error) {
+            console.log('Logout error:', error);
+
+            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+              window.localStorage.clear();
+              window.sessionStorage.clear();
+              window.location.replace('/auth/login');
+            } else {
+              router.replace('/auth/login' as Href);
+            }
           }
-
-          router.replace('/auth/login' as Href);
-        } catch (error) {
-          console.log('Logout error:', error);
-
-          if (Platform.OS === 'web' && typeof window !== 'undefined') {
-            window.localStorage.clear();
-            window.sessionStorage.clear();
-            window.location.replace('/auth/login');
-            return;
-          }
-
-          router.replace('/auth/login' as Href);
-        }
+        },
       },
-    },
-  ]);
-};
-
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          window.localStorage.removeItem('users');
-          window.localStorage.removeItem('currentUser');
-          window.localStorage.clear();
-          window.location.href = '/';
-        } else {
-          router.replace('/auth/login' as Href);
-        }
-      },
-    },
-  ]);
-};
+    ]);
+  };
 
   const openEditModal = () => {
     if (user) {
@@ -198,6 +183,7 @@ const handleLogout = () => {
         <View style={styles.decorTriangle} />
         <View style={styles.decorGlow} />
       </View>
+
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
@@ -212,6 +198,7 @@ const handleLogout = () => {
         <View style={styles.infoCardShapes}>
           <View style={styles.infoCircle} />
         </View>
+
         <View style={styles.infoItem}>
           <Mail color={Colors.primary} size={20} />
           <View style={styles.infoTextContainer}>
@@ -219,6 +206,7 @@ const handleLogout = () => {
             <Text style={styles.infoValue}>{user.email}</Text>
           </View>
         </View>
+
         <View style={[styles.infoItem, { borderBottomWidth: 0 }]}>
           <Phone color={Colors.primary} size={20} />
           <View style={styles.infoTextContainer}>
@@ -360,6 +348,7 @@ const handleLogout = () => {
                       <Trash2 color={Colors.error} size={20} />
                     </TouchableOpacity>
                   </View>
+
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Name</Text>
                     <TextInput
@@ -370,6 +359,7 @@ const handleLogout = () => {
                       placeholderTextColor={Colors.mediumGray}
                     />
                   </View>
+
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Age</Text>
                     <TextInput
