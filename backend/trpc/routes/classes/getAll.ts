@@ -15,7 +15,7 @@ export const getAllClassesProcedure = publicProcedure.query(async ({ ctx }) => {
   return (data ?? []).map((c: any) => ({
     id: c.id,
     name: c.name,
-    ageGroup: c.age_group ?? c.category ?? '',
+    ageGroup: c.age_group ?? '',
     level: c.level,
     day: c.day,
     time: c.time,
