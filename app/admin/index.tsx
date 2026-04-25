@@ -125,31 +125,48 @@ export default function AdminPanel() {
     setBookingsLoading(true);
     setBookingsError(null);
 
-    const { data, error } = await supabase
+    const { data: bookingsData, error: bookingsError } = await supabase
       .from('bookings')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Admin bookings fetch error:', error);
-      setBookingsError(error);
+    if (bookingsError) {
+      console.error('Admin bookings fetch error:', bookingsError);
+      setBookingsError(bookingsError);
       setBookings([]);
       setBookingsLoading(false);
       return;
     }
 
-    const mappedBookings = (data ?? []).map((booking: any) => ({
-      id: booking.id,
-      profileId: booking.profile_id,
-      childId: booking.child_id,
-      classId: booking.class_id,
-      studentId: `${booking.profile_id}::${booking.child_id}`,
-      bookingDate: booking.booking_date,
-      classDate: booking.booking_date,
-      status: booking.status ?? 'confirmed',
-      attended: booking.attended,
-      attendanceMarkedAt: booking.attendance_marked_at,
-    }));
+    const { data: classesData, error: classesError } = await supabase
+      .from('classes')
+      .select('id, name, age_group');
+
+    if (classesError) {
+      console.error('Admin classes fetch error:', classesError);
+    }
+
+    const mappedBookings = (bookingsData ?? []).map((booking: any) => {
+      const cls = (classesData ?? []).find(
+        (c: any) => String(c.id) === String(booking.class_id)
+      );
+
+      return {
+        id: booking.id,
+        profileId: booking.profile_id,
+        childId: booking.child_id,
+        classId: booking.class_id,
+        className: cls
+          ? `${cls.name} - ${cls.age_group ?? ''}`
+          : `Unknown Class (${booking.class_id})`,
+        studentId: `${booking.profile_id}::${booking.child_id}`,
+        bookingDate: booking.booking_date,
+        classDate: booking.booking_date,
+        status: booking.status ?? 'confirmed',
+        attended: booking.attended,
+        attendanceMarkedAt: booking.attendance_marked_at,
+      };
+    });
 
     setBookings(mappedBookings);
     setBookingsLoading(false);
@@ -806,7 +823,7 @@ export default function AdminPanel() {
                 <View key={booking.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View style={styles.bookingInfo}>
-                      <Text style={styles.bookingClass}>{getClassName(booking.classId)}</Text>
+                      <Text style={styles.bookingClass}>{booking.className ?? getClassName(booking.classId)}</Text>
                       <Text style={styles.bookingUser}>{child?.name || 'Unknown'}</Text>
                       <Text style={styles.bookingDate}>{new Date(booking.classDate).toLocaleDateString()}</Text>
                     </View>
