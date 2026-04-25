@@ -23,7 +23,6 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function ProfileScreen() {
@@ -212,3 +211,122 @@ export default function ProfileScreen() {
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0f172a' },
+
+  hero: {
+    height: 240,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  avatarText: { fontSize: 30, fontWeight: 'bold' },
+
+  name: { color: '#fff', fontSize: 20, marginTop: 10 },
+  role: { color: '#aaa' },
+
+  card: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+
+  row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+
+  value: { color: '#fff' },
+
+  section: { marginHorizontal: 16, marginTop: 20 },
+
+  sectionTitle: { color: '#fff', marginBottom: 10 },
+
+  childCard: {
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+
+  childName: { color: '#fff' },
+  childAge: { color: '#aaa' },
+
+  menu: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    padding: 14,
+    borderRadius: 10,
+  },
+
+  menuText: { flex: 1, marginLeft: 10, color: '#fff' },
+
+  logout: {
+    margin: 16,
+    padding: 14,
+    borderRadius: 10,
+    borderColor: '#ff4d4d',
+    borderWidth: 1,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+  },
+
+  logoutText: { color: '#ff4d4d' },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#000000aa',
+    justifyContent: 'flex-end',
+  },
+
+  modal: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  modalTitle: { fontSize: 18, fontWeight: 'bold' },
+
+  input: {
+    backgroundColor: '#f1f1f1',
+    padding: 12,
+    borderRadius: 10,
+    marginVertical: 8,
+  },
+
+  childEdit: { marginBottom: 10 },
+
+  saveBtn: {
+    backgroundColor: '#1e3a8a',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+  },
+
+  saveText: { color: '#fff' },
+
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+});
