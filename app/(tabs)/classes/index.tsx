@@ -8,49 +8,63 @@ import {
   TextInput,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
-import { Search, Clock, Users as UsersIcon, ChevronRight } from 'lucide-react-native';
+import {
+  Search,
+  Clock,
+  Users as UsersIcon,
+  ChevronRight,
+} from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { classes, coaches } from '@/constants/mockData';
 import { useBooking } from '@/contexts/BookingContext';
 import { trpc } from '@/lib/trpc';
 
 export default function ClassesScreen() {
   const router = useRouter();
   const { bookings } = useBooking();
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedLevel, setSelectedLevel] = useState<string>('All');
-  const { data: dbClasses = [] } = trpc.classes.getAll.useQuery();
-  const { data: dbCoaches = [] } = trpc.coaches.getAll.useQuery();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLevel, setSelectedLevel] = useState('All');
+
+  const { data: classes = [], isLoading } = trpc.classes.getAll.useQuery();
+  const { data: coaches = [] } = trpc.coaches.getAll.useQuery();
 
   const levels = ['All', 'Beginner', 'Intermediate', 'Advanced'];
 
-  const allClasses = dbClasses.length > 0 ? dbClasses : classes;
-  const allCoaches = dbCoaches.length > 0 ? dbCoaches : coaches;
+  const filteredClasses = classes.filter((cls: any) => {
+    const name = cls.name || '';
+    const ageGroup = cls.ageGroup || '';
 
-  const filteredClasses = allClasses.filter((cls: any) => {
-    const matchesSearch = cls.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      cls.ageGroup.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch =
+      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ageGroup.toLowerCase().includes(searchQuery.toLowerCase());
+
     const matchesLevel = selectedLevel === 'All' || cls.level === selectedLevel;
+
     return matchesSearch && matchesLevel;
   });
 
-  const getCoachName = (coachId: string) => {
-    const coach = allCoaches.find((c: any) => c.id === coachId);
-    return coach ? coach.name : 'Unknown';
+  const getCoachName = (coachId?: string | null) => {
+    if (!coachId) return 'No coach assigned';
+
+    const coach = coaches.find((c: any) => c.id === coachId);
+    return coach ? coach.name : 'No coach assigned';
   };
 
-
-
   const getEnrolledCount = (classId: string) => {
-    const classBookings = bookings.filter(b => b.classId === classId && b.status !== 'cancelled');
-    const uniqueStudents = new Set(classBookings.map(b => b.studentId));
+    const classBookings = bookings.filter(
+      (booking) => booking.classId === classId && booking.status !== 'cancelled'
+    );
+
+    const uniqueStudents = new Set(classBookings.map((booking) => booking.studentId));
     return uniqueStudents.size;
   };
 
   const getAvailabilityColor = (enrolled: number, capacity: number) => {
-    const percentage = (enrolled / capacity) * 100;
+    const percentage = capacity > 0 ? (enrolled / capacity) * 100 : 0;
+
     if (percentage >= 100) return Colors.error;
     if (percentage >= 80) return Colors.warning;
+
     return Colors.success;
   };
 
@@ -60,6 +74,7 @@ export default function ClassesScreen() {
         <View style={styles.headerCircle1} />
         <View style={styles.headerTriangle} />
       </View>
+
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Search color={Colors.mediumGray} size={20} />
@@ -106,75 +121,93 @@ export default function ClassesScreen() {
         contentContainerStyle={styles.classListContent}
         bounces={false}
       >
-        {filteredClasses.length === 0 ? (
+        {isLoading ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>Loading classes...</Text>
+          </View>
+        ) : filteredClasses.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>No classes found</Text>
           </View>
         ) : (
           filteredClasses.map((cls: any) => {
-            const ageGroup = 'age_group' in cls ? cls.age_group : cls.ageGroup;
+            const enrolled = getEnrolledCount(cls.id);
+            const capacity = cls.capacity || 0;
+
             return (
               <TouchableOpacity
                 key={cls.id}
                 style={styles.classCard}
-                onPress={() => router.push(`/(tabs)/classes/${cls.id}` as Href)}
+                onPress={() =>
+                  router.push(`/(tabs)/classes/${cls.id}` as Href)
+                }
                 activeOpacity={0.7}
               >
-              <View style={styles.cardShapes}>
-                <View style={styles.cardCircle} />
-                <View style={styles.cardGlow} />
-              </View>
-              <View style={styles.classHeader}>
-                <View style={styles.classHeaderLeft}>
-                  <Text style={styles.className}>{cls.name}</Text>
-                  <Text style={styles.classAgeGroup}>{ageGroup}</Text>
+                <View style={styles.cardShapes}>
+                  <View style={styles.cardCircle} />
+                  <View style={styles.cardGlow} />
                 </View>
-                <View
-                  style={[
-                    styles.levelBadge,
-                    cls.level === 'Beginner' && styles.levelBadgeBeginner,
-                    cls.level === 'Intermediate' && styles.levelBadgeIntermediate,
-                    cls.level === 'Advanced' && styles.levelBadgeAdvanced,
-                  ]}
-                >
-                  <Text style={styles.levelBadgeText}>{cls.level}</Text>
-                </View>
-              </View>
 
-              <Text style={styles.classDescription} numberOfLines={2}>
-                {cls.description}
-              </Text>
+                <View style={styles.classHeader}>
+                  <View style={styles.classHeaderLeft}>
+                    <Text style={styles.className}>{cls.name}</Text>
+                    <Text style={styles.classAgeGroup}>{cls.ageGroup}</Text>
+                  </View>
 
-              <View style={styles.classDetails}>
-                <View style={styles.classDetailItem}>
-                  <Clock color={Colors.mediumGray} size={16} />
-                  <Text style={styles.classDetailText}>
-                    {cls.day}, {cls.time} ({cls.duration})
-                  </Text>
-                </View>
-                <View style={styles.classDetailItem}>
-                  <UsersIcon color={Colors.mediumGray} size={16} />
-                  <Text style={styles.classDetailText}>
-                    Coach: {getCoachName(cls.coachId)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.classFooter}>
-                <View style={styles.availabilityContainer}>
                   <View
                     style={[
-                      styles.availabilityDot,
-                      { backgroundColor: getAvailabilityColor(getEnrolledCount(cls.id), cls.capacity) },
+                      styles.levelBadge,
+                      cls.level === 'Beginner' && styles.levelBadgeBeginner,
+                      cls.level === 'Intermediate' && styles.levelBadgeIntermediate,
+                      cls.level === 'Advanced' && styles.levelBadgeAdvanced,
                     ]}
-                  />
-                  <Text style={styles.availabilityText}>
-                    {getEnrolledCount(cls.id)}/{cls.capacity} enrolled
-                    {getEnrolledCount(cls.id) >= cls.capacity && ' (Full)'}
-                  </Text>
+                  >
+                    <Text style={styles.levelBadgeText}>{cls.level}</Text>
+                  </View>
                 </View>
-                <ChevronRight color={Colors.primary} size={20} />
-              </View>
+
+                <Text style={styles.classDescription} numberOfLines={2}>
+                  {cls.description}
+                </Text>
+
+                <View style={styles.classDetails}>
+                  <View style={styles.classDetailItem}>
+                    <Clock color={Colors.mediumGray} size={16} />
+                    <Text style={styles.classDetailText}>
+                      {cls.day}, {cls.time} ({cls.duration})
+                    </Text>
+                  </View>
+
+                  <View style={styles.classDetailItem}>
+                    <UsersIcon color={Colors.mediumGray} size={16} />
+                    <Text style={styles.classDetailText}>
+                      Coach: {getCoachName(cls.coachId)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.classFooter}>
+                  <View style={styles.availabilityContainer}>
+                    <View
+                      style={[
+                        styles.availabilityDot,
+                        {
+                          backgroundColor: getAvailabilityColor(
+                            enrolled,
+                            capacity
+                          ),
+                        },
+                      ]}
+                    />
+
+                    <Text style={styles.availabilityText}>
+                      {enrolled}/{capacity} enrolled
+                      {capacity > 0 && enrolled >= capacity ? ' (Full)' : ''}
+                    </Text>
+                  </View>
+
+                  <ChevronRight color={Colors.primary} size={20} />
+                </View>
               </TouchableOpacity>
             );
           })
