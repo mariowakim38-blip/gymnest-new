@@ -17,6 +17,7 @@ import { useAuth, User } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { classes, Class } from '@/constants/mockData';
 import { Database } from '@/lib/database.types';
+import { supabase } from '@/lib/supabase';
 
 type TabType = 'users' | 'bookings' | 'attendance' | 'announcements' | 'gallery' | 'coaches' | 'classes' | 'events';
 
@@ -63,15 +64,103 @@ export default function AdminPanel() {
     ]);
   };
 
-  const { data: allUsers = [], isLoading: usersLoading, error: usersError, refetch: refreshUsers } = trpc.users.getAll.useQuery(undefined, {
-    enabled: isAdmin,
-    retry: false,
-  });
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<any>(null);
 
-  const { data: bookings = [], isLoading: bookingsLoading, error: bookingsError, refetch: refreshBookings } = trpc.bookings.getAll.useQuery(undefined, {
-    enabled: isAdmin,
-    retry: false,
-  });
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsError, setBookingsError] = useState<any>(null);
+
+  const refreshUsers = async () => {
+    if (!isAdmin) return;
+
+    setUsersLoading(true);
+    setUsersError(null);
+
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (profilesError) {
+      console.error('Admin users fetch error:', profilesError);
+      setUsersError(profilesError);
+      setAllUsers([]);
+      setUsersLoading(false);
+      return;
+    }
+
+    const { data: childrenData, error: childrenError } = await supabase
+      .from('children')
+      .select('*');
+
+    if (childrenError) {
+      console.error('Admin children fetch error:', childrenError);
+    }
+
+    const mappedUsers = (profiles ?? []).map((profile: any) => ({
+      id: profile.id,
+      userId: profile.user_id,
+      name: profile.name ?? profile.full_name ?? 'Unnamed user',
+      email: profile.email ?? '',
+      phoneNumber: profile.phone_number ?? profile.phone ?? '',
+      role: profile.role ?? 'parent',
+      children: (childrenData ?? [])
+        .filter((child: any) => child.profile_id === profile.id)
+        .map((child: any) => ({
+          id: child.id,
+          name: child.name ?? 'Unnamed child',
+          age: child.age ?? '',
+        })),
+    }));
+
+    setAllUsers(mappedUsers);
+    setUsersLoading(false);
+  };
+
+  const refreshBookings = async () => {
+    if (!isAdmin) return;
+
+    setBookingsLoading(true);
+    setBookingsError(null);
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Admin bookings fetch error:', error);
+      setBookingsError(error);
+      setBookings([]);
+      setBookingsLoading(false);
+      return;
+    }
+
+    const mappedBookings = (data ?? []).map((booking: any) => ({
+      id: booking.id,
+      profileId: booking.profile_id,
+      childId: booking.child_id,
+      classId: booking.class_id,
+      studentId: `${booking.profile_id}::${booking.child_id}`,
+      bookingDate: booking.booking_date,
+      classDate: booking.booking_date,
+      status: booking.status ?? 'confirmed',
+      attended: booking.attended,
+      attendanceMarkedAt: booking.attendance_marked_at,
+    }));
+
+    setBookings(mappedBookings);
+    setBookingsLoading(false);
+  };
+
+  useEffect(() => {
+    if (isAdmin) {
+      refreshUsers();
+      refreshBookings();
+    }
+  }, [isAdmin]);
   const { data: privateSessions = [], isLoading: sessionsLoading, error: sessionsError, refetch: refreshSessions } = trpc.sessions.getAll.useQuery(undefined, {
     enabled: isAdmin,
     retry: false,
@@ -413,8 +502,10 @@ export default function AdminPanel() {
   };
 
   const getClassName = (classId: string) => {
-    const cls = classes.find(c => c.id === classId);
-    return cls ? `${cls.name} - ${cls.ageGroup}` : 'Unknown Class';
+    const cls: any = [...(dbClasses as any[]), ...(classes as any[])].find((c: any) => String(c.id) === String(classId));
+    if (!cls) return 'Unknown Class';
+    const ageGroup = cls.age_group ?? cls.ageGroup ?? '';
+    return `${cls.name} - ${ageGroup}`;
   };
 
   const getClassDates = (classId: string) => {
@@ -424,10 +515,11 @@ export default function AdminPanel() {
   };
 
   const filterClassesByDate = () => {
-    if (!searchDate.trim()) return classes;
-    return classes.filter(cls => {
+    const sourceClasses = dbClasses.length > 0 ? dbClasses : classes;
+    if (!searchDate.trim()) return sourceClasses as any[];
+    return (sourceClasses as any[]).filter((cls: any) => {
       const classDates = getClassDates(cls.id);
-      return classDates.some(date => {
+      return classDates.some((date: string) => {
         const dateObj = new Date(date);
         const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         return formattedDate.toLowerCase().includes(searchDate.toLowerCase()) || date.includes(searchDate);
@@ -707,7 +799,7 @@ export default function AdminPanel() {
             ) : bookings.length === 0 ? (
               <Text style={styles.emptyStateText}>No bookings found. If a user booked while ENABLE_BOOKINGS was false, that booking was temporary and was not saved to Supabase.</Text>
             ) : bookings.map((booking) => {
-              const [userId, childId] = booking.studentId.split('-');
+              const [userId, childId] = booking.studentId.split('::');
               const parent = allUsers.find(u => u.id === userId);
               const child = parent?.children?.find(c => c.id === childId);
               return (
@@ -736,7 +828,7 @@ export default function AdminPanel() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {filterClassesByDate().map((cls) => (
                   <TouchableOpacity key={cls.id} style={[styles.classChip, selectedClassId === cls.id && styles.classChipActive]} onPress={() => setSelectedClassId(cls.id)}>
-                    <Text style={[styles.classChipText, selectedClassId === cls.id && styles.classChipTextActive]}>{cls.name} - {cls.ageGroup}</Text>
+                    <Text style={[styles.classChipText, selectedClassId === cls.id && styles.classChipTextActive]}>{cls.name} - {(cls as any).age_group ?? (cls as any).ageGroup}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -756,7 +848,7 @@ export default function AdminPanel() {
             {selectedClassId && selectedClassDate && (
               <View>
                 {getBookingsForClassDate(selectedClassId, selectedClassDate).map((booking) => {
-                  const [userId, childId] = booking.studentId.split('-');
+                  const [userId, childId] = booking.studentId.split('::');
                   const parent = allUsers.find(u => u.id === userId);
                   const child = parent?.children?.find(c => c.id === childId);
                   return (
