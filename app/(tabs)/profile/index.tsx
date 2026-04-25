@@ -37,18 +37,10 @@ export default function ProfileScreen() {
   const [editPhoneNumber, setEditPhoneNumber] = useState<string>('');
   const [editChildren, setEditChildren] = useState<{ id: string; name: string; age: number }[]>([]);
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-        },
-      },
-    ]);
-  };
+  const handleLogout = async () => {
+  console.log('USER LOGOUT PRESSED');
+  await logout();
+};
 
   const openEditModal = () => {
     if (user) {
