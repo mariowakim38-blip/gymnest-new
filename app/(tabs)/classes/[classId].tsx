@@ -20,7 +20,7 @@ export default function ClassDetailScreen() {
   const router = useRouter();
 
   const { user, isAuthenticated } = useAuth();
-  const { bookMultipleDates, getClassBookings } = useBooking();
+  const { getClassBookings } = useBooking();
 
   const [classData, setClassData] = useState<any>(null);
   const [coach, setCoach] = useState<any>(null);
@@ -201,7 +201,6 @@ export default function ClassDetailScreen() {
       return;
     }
 
-    const studentId = `${user.id}::${student.id}`;
     const dates = getNext4Dates();
 
     if (dates.length === 0) {
@@ -209,14 +208,25 @@ export default function ClassDetailScreen() {
       return;
     }
 
-    const result = await bookMultipleDates(classId, studentId, dates);
+    const bookingsToInsert = dates.map((date) => ({
+      profile_id: user.id,
+      class_id: classId,
+      child_id: student.id,
+      booking_date: date,
+      status: 'confirmed',
+    }));
 
-    if (result.success) {
-      Alert.alert('Success', 'Booked successfully');
-      router.back();
-    } else {
-      Alert.alert('Error', result.error || 'Failed');
+    const { error } = await supabase
+      .from('bookings')
+      .insert(bookingsToInsert);
+
+    if (error) {
+      Alert.alert('Booking Error', error.message);
+      return;
     }
+
+    Alert.alert('Success', 'Booked successfully');
+    router.back();
   };
 
   return (
