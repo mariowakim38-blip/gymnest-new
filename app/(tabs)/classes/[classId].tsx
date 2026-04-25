@@ -97,7 +97,14 @@ export default function ClassDetailScreen() {
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const formatDateString = (date: Date) => {
-    return date.toISOString().split('T')[0];
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseLocalDate = (dateString: string) => {
+    return new Date(`${dateString}T12:00:00`);
   };
 
   const calendarDates = useMemo(() => {
@@ -130,7 +137,7 @@ export default function ClassDetailScreen() {
     if (!classData) return [];
 
     const dates: string[] = [];
-    const d = selectedDate ? new Date(selectedDate) : new Date(today);
+    const d = selectedDate ? parseLocalDate(selectedDate) : new Date(today);
 
     while (dates.length < 4) {
       if (d >= today && d.getDay() === classData.dayOfWeek) {
