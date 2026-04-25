@@ -37,7 +37,7 @@ export default function ProfileScreen() {
   const [editPhoneNumber, setEditPhoneNumber] = useState<string>('');
   const [editChildren, setEditChildren] = useState<{ id: string; name: string; age: number }[]>([]);
 
-  const handleLogout = () => {
+const handleLogout = () => {
   Alert.alert('Logout', 'Are you sure you want to logout?', [
     { text: 'Cancel', style: 'cancel' },
     {
@@ -53,9 +53,10 @@ export default function ProfileScreen() {
             window.localStorage.clear();
             window.sessionStorage.clear();
             window.location.replace('/auth/login');
-          } else {
-            router.replace('/auth/login' as Href);
+            return;
           }
+
+          router.replace('/auth/login' as Href);
         } catch (error) {
           console.log('Logout error:', error);
 
@@ -63,9 +64,10 @@ export default function ProfileScreen() {
             window.localStorage.clear();
             window.sessionStorage.clear();
             window.location.replace('/auth/login');
-          } else {
-            router.replace('/auth/login' as Href);
+            return;
           }
+
+          router.replace('/auth/login' as Href);
         }
       },
     },
