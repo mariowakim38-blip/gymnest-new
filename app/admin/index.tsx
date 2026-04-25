@@ -140,7 +140,7 @@ export default function AdminPanel() {
 
     const { data: classesData, error: classesError } = await supabase
       .from('classes')
-      .select('id, name, age_group');
+      .select('id, name, age_group, day, time, duration');
 
     if (classesError) {
       console.error('Admin classes fetch error:', classesError);
@@ -159,6 +159,9 @@ export default function AdminPanel() {
         className: cls
           ? `${cls.name} - ${cls.age_group ?? ''}`
           : `Unknown Class (${booking.class_id})`,
+        classDay: cls?.day ?? '',
+        classTime: cls?.time ?? '',
+        classDuration: cls?.duration ?? '',
         studentId: `${booking.profile_id}::${booking.child_id}`,
         bookingDate: booking.booking_date,
         classDate: booking.booking_date,
@@ -807,33 +810,92 @@ export default function AdminPanel() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>All Bookings</Text>
-              <TouchableOpacity style={styles.smallActionButton} onPress={() => refreshBookings()} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.smallActionButton}
+                onPress={() => refreshBookings()}
+                activeOpacity={0.8}
+              >
                 <Text style={styles.smallActionButtonText}>Refresh</Text>
               </TouchableOpacity>
             </View>
+
             {bookingsLoading ? (
               <Text style={styles.emptyStateText}>Loading bookings...</Text>
             ) : bookings.length === 0 ? (
-              <Text style={styles.emptyStateText}>No bookings found. If a user booked while ENABLE_BOOKINGS was false, that booking was temporary and was not saved to Supabase.</Text>
-            ) : bookings.map((booking) => {
-              const [userId, childId] = booking.studentId.split('::');
-              const parent = allUsers.find(u => u.id === userId);
-              const child = parent?.children?.find(c => c.id === childId);
-              return (
-                <View key={booking.id} style={styles.card}>
-                  <View style={styles.cardHeader}>
+              <Text style={styles.emptyStateText}>No bookings found.</Text>
+            ) : (
+              Object.values(
+                bookings.reduce((acc: any, booking: any) => {
+                  const key = `${booking.profileId}-${booking.childId}-${booking.classId}`;
+
+                  if (!acc[key]) {
+                    const parent = allUsers.find((u) => u.id === booking.profileId);
+                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+
+                    acc[key] = {
+                      key,
+                      parentName: parent?.name ?? 'Unknown parent',
+                      childName: child?.name ?? 'Unknown child',
+                      className: booking.className ?? getClassName(booking.classId),
+                      classDay: booking.classDay ?? '',
+                      classTime: booking.classTime ?? '',
+                      classDuration: booking.classDuration ?? '',
+                      dates: [],
+                      bookingIds: [],
+                    };
+                  }
+
+                  acc[key].dates.push(booking.classDate);
+                  acc[key].bookingIds.push(booking.id);
+                  return acc;
+                }, {})
+              ).map((group: any) => (
+                <View key={group.key} style={styles.bookingGroupCard}>
+                  <View style={styles.bookingGroupHeader}>
                     <View style={styles.bookingInfo}>
-                      <Text style={styles.bookingClass}>{booking.className ?? getClassName(booking.classId)}</Text>
-                      <Text style={styles.bookingUser}>{child?.name || 'Unknown'}</Text>
-                      <Text style={styles.bookingDate}>{new Date(booking.classDate).toLocaleDateString()}</Text>
+                      <Text style={styles.bookingClass}>{group.className}</Text>
+                      <Text style={styles.bookingScheduleLine}>
+                        {group.classDay || 'Class day'}{group.classTime ? ` • ${group.classTime}` : ''}{group.classDuration ? ` • ${group.classDuration}` : ''}
+                      </Text>
+                      <Text style={styles.bookingUser}>Student: {group.childName}</Text>
+                      <Text style={styles.bookingDate}>Parent: {group.parentName}</Text>
                     </View>
-                    <TouchableOpacity style={styles.iconButton} onPress={() => handleCancelBooking(booking.id)}>
-                      <Trash2 color={Colors.danger} size={20} />
-                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.scheduleBox}>
+                    {group.dates
+                      .sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())
+                      .map((date: string) => {
+                        const d = new Date(date);
+                        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+                        const formatted = d.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        });
+
+                        return (
+                          <TouchableOpacity
+                            key={date}
+                            style={styles.scheduleDateBox}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              if (Platform.OS === 'web') {
+                                alert(`${group.className}\n${dayName}, ${formatted}`);
+                              } else {
+                                Alert.alert(group.className, `${dayName}, ${formatted}`);
+                              }
+                            }}
+                          >
+                            <Text style={styles.scheduleDay}>{dayName}</Text>
+                            <Text style={styles.scheduleDate}>{formatted}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                   </View>
                 </View>
-              );
-            })}
+              ))
+            )}
           </View>
         )}
 
@@ -1510,6 +1572,54 @@ const styles = StyleSheet.create({
     color: Colors.darkGray,
     fontSize: 16,
     fontWeight: '600' as const,
+  },
+
+  bookingGroupCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bookingGroupHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'flex-start' as const,
+  },
+  bookingScheduleLine: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '700' as const,
+    marginBottom: 4,
+  },
+  scheduleBox: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginTop: 12,
+  },
+  scheduleDateBox: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minWidth: 120,
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
+  },
+  scheduleDay: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  scheduleDate: {
+    fontSize: 12,
+    color: Colors.darkGray,
+    marginTop: 2,
   },
   emptyStateText: {
     fontSize: 16,
