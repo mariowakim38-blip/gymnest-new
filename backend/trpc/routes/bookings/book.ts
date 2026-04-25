@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { protectedProcedure } from '../../middleware/auth';
+import { requireAuthenticatedProfile } from '../../utils/guards';
 import { Database } from '../../../../lib/database.types';
 
 type BookingInsert = Database['public']['Tables']['bookings']['Insert'];
@@ -12,10 +13,11 @@ export const bookClassProcedure = protectedProcedure
     isWaitlist: z.boolean().optional(),
   }))
   .mutation(async ({ input, ctx }) => {
+    requireAuthenticatedProfile(ctx);
+
     const [profileId, childId] = input.studentId.split('-');
-    if (!profileId || !childId) {
-      throw new Error('Invalid studentId format. Expected format: profileId-childId');
-    }
+    if (!profileId || !childId) throw new Error('Invalid studentId format. Expected profileId-childId');
+
     if (ctx.profile?.role !== 'admin' && ctx.profile?.id !== profileId) {
       throw new Error('You can only create bookings for your own children');
     }
@@ -26,6 +28,7 @@ export const bookClassProcedure = protectedProcedure
       .eq('id', childId)
       .eq('profile_id', profileId)
       .single();
+
     if (!childExists) throw new Error('Child not found for this profile');
 
     const bookingToInsert: BookingInsert = {
@@ -33,10 +36,16 @@ export const bookClassProcedure = protectedProcedure
       class_id: input.classId,
       child_id: childId,
       booking_date: input.classDate,
-      status: input.isWaitlist ? 'waitlist' : 'confirmed',
+      status: 'confirmed',
+      attended: null,
     };
 
-    const { data, error } = await ctx.supabase.from('bookings').insert(bookingToInsert).select().single();
+    const { data, error } = await ctx.supabase
+      .from('bookings')
+      .insert(bookingToInsert)
+      .select()
+      .single();
+
     if (error || !data) throw new Error(error?.message || 'Failed to create booking');
     return { success: true, booking: data };
   });

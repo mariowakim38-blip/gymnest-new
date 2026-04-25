@@ -1,15 +1,15 @@
-import { publicProcedure } from "../../middleware/auth";
+import { publicProcedure } from '../../create-context';
 
 export const getAllClassesProcedure = publicProcedure.query(async ({ ctx }) => {
   const { data, error } = await ctx.supabase
-    .from("classes")
-    .select("*")
-    .order("day_of_week", { ascending: true })
-    .order("time", { ascending: true });
+    .from('classes')
+    .select('*')
+    .order('day_of_week', { ascending: true })
+    .order('time', { ascending: true });
 
   if (error) throw new Error(error.message);
 
-  return data.map((c) => ({
+  return (data ?? []).map((c: any) => ({
     id: c.id,
     name: c.name,
     ageGroup: c.age_group,

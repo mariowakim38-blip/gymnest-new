@@ -1,23 +1,12 @@
-import { z } from "zod";
-import { protectedProcedure } from "../../middleware/auth";
+import { z } from 'zod';
+import { protectedProcedure } from '../../middleware/auth';
+import { requireAdmin } from '../../utils/guards';
 
 export const deleteClassProcedure = protectedProcedure
-  .input(
-    z.object({
-      id: z.string(),
-    })
-  )
+  .input(z.object({ id: z.string() }))
   .mutation(async ({ input, ctx }) => {
-    if (ctx.profile?.role !== "admin") {
-      throw new Error("Unauthorized");
-    }
-
-    const { error } = await ctx.supabase
-      .from("classes")
-      .delete()
-      .eq("id", input.id);
-
+    requireAdmin(ctx);
+    const { error } = await ctx.supabase.from('classes').delete().eq('id', input.id);
     if (error) throw new Error(error.message);
-
     return { success: true };
   });

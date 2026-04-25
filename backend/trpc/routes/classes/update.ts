@@ -1,27 +1,24 @@
-import { z } from "zod";
-import { protectedProcedure } from "../../middleware/auth";
+import { z } from 'zod';
+import { protectedProcedure } from '../../middleware/auth';
+import { requireAdmin } from '../../utils/guards';
 
 export const updateClassProcedure = protectedProcedure
-  .input(
-    z.object({
-      id: z.string(),
-      name: z.string().optional(),
-      ageGroup: z.string().optional(),
-      level: z.enum(['Beginner', 'Intermediate', 'Advanced']).optional(),
-      day: z.string().optional(),
-      time: z.string().optional(),
-      duration: z.string().optional(),
-      coachId: z.string().optional(),
-      capacity: z.number().optional(),
-      enrolled: z.number().optional(),
-      description: z.string().optional(),
-      dayOfWeek: z.number().optional(),
-    })
-  )
+  .input(z.object({
+    id: z.string(),
+    name: z.string().min(1).optional(),
+    ageGroup: z.string().min(1).optional(),
+    level: z.enum(['Beginner', 'Intermediate', 'Advanced']).optional(),
+    day: z.string().min(1).optional(),
+    time: z.string().min(1).optional(),
+    duration: z.string().min(1).optional(),
+    coachId: z.string().min(1).optional(),
+    capacity: z.number().int().min(1).optional(),
+    enrolled: z.number().int().min(0).optional(),
+    description: z.string().min(1).optional(),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+  }))
   .mutation(async ({ input, ctx }) => {
-    if (ctx.profile?.role !== "admin") {
-      throw new Error("Unauthorized");
-    }
+    requireAdmin(ctx);
 
     const updateData: any = {};
     if (input.name !== undefined) updateData.name = input.name;
@@ -35,28 +32,9 @@ export const updateClassProcedure = protectedProcedure
     if (input.enrolled !== undefined) updateData.enrolled = input.enrolled;
     if (input.description !== undefined) updateData.description = input.description;
     if (input.dayOfWeek !== undefined) updateData.day_of_week = input.dayOfWeek;
+    updateData.updated_at = new Date().toISOString();
 
-    const { data, error } = await ctx.supabase
-      .from("classes")
-      .update(updateData)
-      .eq("id", input.id)
-      .select()
-      .single();
-
+    const { data, error } = await ctx.supabase.from('classes').update(updateData).eq('id', input.id).select().single();
     if (error) throw new Error(error.message);
-
-    return {
-      id: data.id,
-      name: data.name,
-      ageGroup: data.age_group,
-      level: data.level,
-      day: data.day,
-      time: data.time,
-      duration: data.duration,
-      coachId: data.coach_id,
-      capacity: data.capacity,
-      enrolled: data.enrolled,
-      description: data.description,
-      dayOfWeek: data.day_of_week,
-    };
+    return data;
   });
