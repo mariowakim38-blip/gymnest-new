@@ -6,24 +6,22 @@ export const getAllClassesProcedure = publicProcedure.query(async ({ ctx }) => {
     .select('*');
 
   if (error) {
-    console.error('SUPABASE CLASSES ERROR:', error);
+    console.error('GET CLASSES ERROR:', error);
     throw new Error(error.message);
   }
 
-  console.log('SUPABASE CLASSES DATA:', data);
-
   return (data ?? []).map((c: any) => ({
     id: c.id,
-    name: c.name,
+    name: c.name ?? '',
     ageGroup: c.age_group ?? '',
-    level: c.level,
-    day: c.day,
-    time: c.time,
-    duration: c.duration,
+    level: c.level ?? '',
+    day: c.day ?? '',
+    time: c.time ?? '',
+    duration: c.duration ?? '',
     coachId: c.coach_id ?? null,
     capacity: c.capacity ?? 0,
     enrolled: c.enrolled ?? 0,
     description: c.description ?? '',
-    dayOfWeek: c.day_of_week ?? null,
+    dayOfWeek: c.day_of_week ?? 0,
   }));
 });
