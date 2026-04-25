@@ -19,15 +19,22 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
-import { classes, coaches } from '@/constants/mockData';
+import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBooking } from '@/contexts/BookingContext';
 
 export default function ClassDetailScreen() {
   const { classId } = useLocalSearchParams<{ classId: string }>();
   const router = useRouter();
+
   const { user, isAuthenticated } = useAuth();
   const { bookMultipleDates, getStudentBookings, getClassBookings } = useBooking();
+
+  const { data: classes = [], isLoading: classesLoading } =
+    trpc.classes.getAll.useQuery();
+
+  const { data: coaches = [] } =
+    trpc.coaches.getAll.useQuery();
 
   const today = useMemo(() => {
     const d = new Date();
@@ -41,8 +48,10 @@ export default function ClassDetailScreen() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
-  const classData = classes.find((c) => c.id === classId);
-  const coach = classData ? coaches.find((c) => c.id === classData.coachId) : null;
+  const classData = classes.find((c: any) => c.id === classId);
+  const coach = classData
+    ? coaches.find((c: any) => c.id === classData.coachId)
+    : null;
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -136,6 +145,14 @@ export default function ClassDetailScreen() {
 
     return dates;
   };
+
+  if (classesLoading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Loading class...</Text>
+      </View>
+    );
+  }
 
   if (!classData) {
     return (
@@ -256,455 +273,4 @@ export default function ClassDetailScreen() {
             styles.levelBadge,
             classData.level === 'Beginner' && styles.levelBadgeBeginner,
             classData.level === 'Intermediate' && styles.levelBadgeIntermediate,
-            classData.level === 'Advanced' && styles.levelBadgeAdvanced,
-          ]}
-        >
-          <Text style={styles.levelBadgeText}>{classData.level}</Text>
-        </View>
-      </LinearGradient>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Class Details</Text>
-        <Text style={styles.description}>{classData.description}</Text>
-
-        <View style={styles.detailsGrid}>
-          <View style={styles.detailCard}>
-            <Calendar color={Colors.gold} size={24} />
-            <Text style={styles.detailLabel}>Schedule</Text>
-            <Text style={styles.detailValue}>{classData.day}</Text>
-            <Text style={styles.detailSubValue}>{classData.time}</Text>
-          </View>
-
-          <View style={styles.detailCard}>
-            <Clock color={Colors.gold} size={24} />
-            <Text style={styles.detailLabel}>Duration</Text>
-            <Text style={styles.detailValue}>{classData.duration}</Text>
-          </View>
-
-          <View style={styles.detailCard}>
-            <Users color={Colors.gold} size={24} />
-            <Text style={styles.detailLabel}>Capacity</Text>
-            <Text style={styles.detailValue}>{classData.capacity} spots</Text>
-            <Text style={styles.detailSubValue}>per class</Text>
-          </View>
-
-          <View style={styles.detailCard}>
-            <MapPin color={Colors.gold} size={24} />
-            <Text style={styles.detailLabel}>Location</Text>
-            <Text style={styles.detailValue}>Main</Text>
-            <Text style={styles.detailSubValue}>Arena</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.calendarSection}>
-        <Text style={styles.sectionTitle}>Select a Start Date</Text>
-
-        <View style={styles.calendarHeader}>
-          <TouchableOpacity style={styles.monthButton} onPress={goToPreviousMonth}>
-            <ChevronLeft color={Colors.mediumGray} size={24} />
-          </TouchableOpacity>
-
-          <Text style={styles.monthTitle}>
-            {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-          </Text>
-
-          <TouchableOpacity style={styles.monthButton} onPress={goToNextMonth}>
-            <ChevronRight color={Colors.mediumGray} size={24} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.calendarGrid}>
-          {dayNames.map((day) => (
-            <View key={day} style={styles.dayNameCell}>
-              <Text style={styles.dayNameText}>{day}</Text>
-            </View>
-          ))}
-
-          {calendarDates.map((date, index) => {
-            const available = isDateAvailable(date);
-            const selected = isDateSelected(date);
-            const inMonth = isCurrentMonth(date);
-
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.dateCell,
-                  !inMonth && styles.dateCellOutside,
-                  available && styles.dateCellAvailable,
-                  selected && styles.dateCellSelected,
-                ]}
-                disabled={!available}
-                onPress={() => handleSelectDate(date)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.dateText,
-                    !inMonth && styles.dateTextOutside,
-                    available && styles.dateTextAvailable,
-                    selected && styles.dateTextSelected,
-                  ]}
-                >
-                  {date.getDate()}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {selectedDate ? (
-          <View style={styles.selectedDateInfo}>
-            <Text style={styles.selectedDateLabel}>Selected Start Date:</Text>
-            <Text style={styles.selectedDateValue}>
-              {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </Text>
-
-            <Text style={styles.availabilityInfo}>
-              {`${bookingsForSelectedDate.length}/${classData.capacity} spots booked${
-                isFull ? ' (Full - Waitlist Available)' : ` (${spotsLeft} spots left)`
-              }`}
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.selectedDateInfo}>
-            <Text style={styles.selectedDateLabel}>No date selected</Text>
-            <Text style={styles.selectedDateValue}>
-              Tap an available {classData.day} to choose when the 4 bookings start.
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {coach && (
-        <View style={styles.coachSection}>
-          <Text style={styles.sectionTitle}>Your Coach</Text>
-
-          <View style={styles.coachCard}>
-            <View style={styles.coachAvatar}>
-              <Text style={styles.coachAvatarText}>{coach.name.charAt(0)}</Text>
-            </View>
-
-            <View style={styles.coachInfo}>
-              <Text style={styles.coachName}>{coach.name}</Text>
-
-              <View style={styles.coachSpecialization}>
-                <Award color={Colors.primary} size={16} />
-                <Text style={styles.coachSpecializationText}>
-                  {coach.specialization}
-                </Text>
-              </View>
-
-              <Text style={styles.coachExperience}>{coach.experience} experience</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      <View style={styles.bookingSection}>
-        <TouchableOpacity
-          style={[styles.bookButton, isBooking && styles.bookButtonDisabled]}
-          onPress={handleBookClass}
-          disabled={isBooking}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={isFull ? [Colors.warning, '#e0a800'] : [Colors.gold, '#c49b2e']}
-            style={styles.bookButtonGradient}
-          >
-            <Text style={styles.bookButtonText}>
-              {isBooking ? 'Booking...' : 'Book Next 4 Classes'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    paddingBottom: 32,
-  },
-  errorText: {
-    fontSize: 16,
-    color: Colors.textLight,
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  header: {
-    padding: 32,
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  className: {
-    fontSize: 28,
-    fontWeight: 'bold' as const,
-    color: Colors.white,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  classAgeGroup: {
-    fontSize: 16,
-    color: Colors.gold,
-    marginBottom: 16,
-  },
-  levelBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  levelBadgeBeginner: {
-    backgroundColor: '#e3f2fd',
-  },
-  levelBadgeIntermediate: {
-    backgroundColor: '#fff3e0',
-  },
-  levelBadgeAdvanced: {
-    backgroundColor: '#fce4ec',
-  },
-  levelBadgeText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.primary,
-  },
-  infoSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
-    color: Colors.primary,
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 16,
-    color: Colors.text,
-    lineHeight: 24,
-    marginBottom: 20,
-  },
-  detailsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  detailCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: Colors.textLight,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  detailValue: {
-    fontSize: 16,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  detailSubValue: {
-    fontSize: 12,
-    color: Colors.textLight,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  calendarSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  monthButton: {
-    padding: 8,
-  },
-  monthTitle: {
-    fontSize: 18,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  dayNameCell: {
-    width: '14.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dayNameText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.textLight,
-  },
-  dateCell: {
-    width: '14.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  dateCellOutside: {
-    opacity: 0.3,
-  },
-  dateCellAvailable: {
-    backgroundColor: Colors.lightGray,
-  },
-  dateCellSelected: {
-    backgroundColor: Colors.primary,
-  },
-  dateText: {
-    fontSize: 14,
-    color: Colors.text,
-  },
-  dateTextOutside: {
-    color: Colors.mediumGray,
-  },
-  dateTextAvailable: {
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  dateTextSelected: {
-    color: Colors.white,
-    fontWeight: 'bold' as const,
-  },
-  selectedDateInfo: {
-    marginTop: 16,
-    padding: 16,
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  selectedDateLabel: {
-    fontSize: 12,
-    color: Colors.textLight,
-    marginBottom: 4,
-  },
-  selectedDateValue: {
-    fontSize: 16,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  availabilityInfo: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  coachSection: {
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  coachCard: {
-    flexDirection: 'row',
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  coachAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  coachAvatarText: {
-    fontSize: 24,
-    fontWeight: 'bold' as const,
-    color: Colors.white,
-  },
-  coachInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  coachName: {
-    fontSize: 18,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  coachSpecialization: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  coachSpecializationText: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  coachExperience: {
-    fontSize: 13,
-    color: Colors.textLight,
-  },
-  bookingSection: {
-    paddingHorizontal: 16,
-  },
-  bookButton: {
-    borderRadius: 25,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  bookButtonDisabled: {
-    opacity: 0.6,
-  },
-  bookButtonGradient: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  bookButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold' as const,
-    color: Colors.white,
-  },
-});
+            classData.level === 'Advanced' && styles.level
