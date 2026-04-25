@@ -44,9 +44,9 @@ export default function ClassDetailScreen() {
 
   const [isBooking, setIsBooking] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    return new Date(today.getFullYear(), today.getMonth(), 1);
-  });
+  const [currentMonth, setCurrentMonth] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1)
+  );
 
   const classData = classes.find((c: any) => c.id === classId);
   const coach = classData
@@ -54,29 +54,23 @@ export default function ClassDetailScreen() {
     : null;
 
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December',
   ];
 
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
   const formatDateString = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return date.toISOString().split('T')[0];
   };
 
   const calendarDates = useMemo(() => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startDate = new Date(firstDay);
-
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
+    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const start = new Date(firstDay);
+    start.setDate(start.getDate() - firstDay.getDay());
 
     const dates: Date[] = [];
-    const current = new Date(startDate);
+    const current = new Date(start);
 
     while (dates.length < 42) {
       dates.push(new Date(current));
@@ -88,11 +82,7 @@ export default function ClassDetailScreen() {
 
   const isDateAvailable = (date: Date) => {
     if (!classData) return false;
-
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
-
-    return checkDate >= today && checkDate.getDay() === classData.dayOfWeek;
+    return date >= today && date.getDay() === classData.dayOfWeek;
   };
 
   const isDateSelected = (date: Date) => {
@@ -104,15 +94,11 @@ export default function ClassDetailScreen() {
   };
 
   const goToPreviousMonth = () => {
-    setCurrentMonth((prev) => {
-      return new Date(prev.getFullYear(), prev.getMonth() - 1, 1);
-    });
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   };
 
   const goToNextMonth = () => {
-    setCurrentMonth((prev) => {
-      return new Date(prev.getFullYear(), prev.getMonth() + 1, 1);
-    });
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
   };
 
   const handleSelectDate = (date: Date) => {
@@ -122,155 +108,133 @@ export default function ClassDetailScreen() {
 
   const getNext4Dates = () => {
     if (!classData) return [];
-
     const dates: string[] = [];
-    const startDate = selectedDate
-      ? new Date(`${selectedDate}T00:00:00`)
-      : new Date(today);
-
-    startDate.setHours(0, 0, 0, 0);
-
-    const currentDate = new Date(startDate);
+    let d = selectedDate ? new Date(selectedDate) : new Date(today);
 
     while (dates.length < 4) {
-      const checkDate = new Date(currentDate);
-      checkDate.setHours(0, 0, 0, 0);
-
-      if (checkDate >= today && checkDate.getDay() === classData.dayOfWeek) {
-        dates.push(formatDateString(checkDate));
+      if (d >= today && d.getDay() === classData.dayOfWeek) {
+        dates.push(formatDateString(d));
       }
-
-      currentDate.setDate(currentDate.getDate() + 1);
+      d.setDate(d.getDate() + 1);
     }
 
     return dates;
   };
 
   if (classesLoading) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Loading class...</Text>
-      </View>
-    );
+    return <View style={styles.container}><Text>Loading...</Text></View>;
   }
 
   if (!classData) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Class not found</Text>
-      </View>
-    );
+    return <View style={styles.container}><Text>Class not found</Text></View>;
   }
 
   const bookingsForSelectedDate = selectedDate
     ? getClassBookings(classId, selectedDate)
     : [];
 
-  const isFull = selectedDate
-    ? bookingsForSelectedDate.length >= classData.capacity
-    : false;
-
-  const spotsLeft = selectedDate
-    ? classData.capacity - bookingsForSelectedDate.length
-    : classData.capacity;
+  const isFull = bookingsForSelectedDate.length >= classData.capacity;
 
   const handleBookClass = async () => {
     if (!isAuthenticated || !user) {
-      Alert.alert('Login Required', 'Please log in to book a class', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log In', onPress: () => router.push('/auth/login' as Href) },
-      ]);
+      router.push('/auth/login' as Href);
       return;
     }
 
-    if (!user.children || user.children.length === 0) {
-      Alert.alert('No Students', 'Please add a student to your profile first');
-      return;
+    const student = user.children?.[0];
+    if (!student) return;
+
+    const studentId = `${user.id}-${student.id}`;
+    const dates = getNext4Dates();
+
+    const result = await bookMultipleDates(classId, studentId, dates);
+
+    if (result.success) {
+      Alert.alert('Success', 'Booked successfully');
+      router.back();
+    } else {
+      Alert.alert('Error', result.error || 'Failed');
     }
-
-    const student = user.children[0];
-    const studentUniqueId = `${user.id}-${student.id}`;
-    const datesToBook = getNext4Dates();
-
-    if (datesToBook.length === 0) {
-      Alert.alert('Error', 'No available dates found for this class');
-      return;
-    }
-
-    const existingBookings = getStudentBookings(studentUniqueId);
-
-    const alreadyBookedDates = datesToBook.filter((date) =>
-      existingBookings.some(
-        (booking) => booking.classId === classId && booking.classDate === date
-      )
-    );
-
-    if (alreadyBookedDates.length > 0) {
-      Alert.alert(
-        'Already Booked',
-        `This student is already booked on ${alreadyBookedDates.length} of these dates.`
-      );
-      return;
-    }
-
-    const datesList = datesToBook
-      .map((date) =>
-        new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        })
-      )
-      .join(', ');
-
-    Alert.alert(
-      'Book 4 Classes',
-      `This will book the next 4 ${classData.day} classes at ${classData.time}:\n\n${datesList}\n\nContinue?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Book All',
-          onPress: async () => {
-            setIsBooking(true);
-
-            const result = await bookMultipleDates(
-              classId,
-              studentUniqueId,
-              datesToBook
-            );
-
-            setIsBooking(false);
-
-            if (result.success) {
-              Alert.alert(
-                'Success!',
-                `Successfully booked 4 classes for ${student.name}!`,
-                [{ text: 'OK', onPress: () => router.back() }]
-              );
-            } else {
-              Alert.alert(
-                'Error',
-                result.error || 'Failed to book classes. Please try again.'
-              );
-            }
-          },
-        },
-      ]
-    );
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <ScrollView style={styles.container}>
       <LinearGradient colors={[Colors.primary, '#2a3f5f']} style={styles.header}>
         <Text style={styles.className}>{classData.name}</Text>
         <Text style={styles.classAgeGroup}>{classData.ageGroup}</Text>
 
-        <View
-          style={[
-            styles.levelBadge,
-            classData.level === 'Beginner' && styles.levelBadgeBeginner,
-            classData.level === 'Intermediate' && styles.levelBadgeIntermediate,
-            classData.level === 'Advanced' && styles.level
+        <View style={[
+          styles.levelBadge,
+          classData.level === 'Beginner' && styles.levelBadgeBeginner,
+          classData.level === 'Intermediate' && styles.levelBadgeIntermediate,
+          classData.level === 'Advanced' && styles.levelBadgeAdvanced,
+        ]}>
+          <Text style={styles.levelBadgeText}>{classData.level}</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.calendarSection}>
+        <View style={styles.calendarHeader}>
+          <TouchableOpacity onPress={goToPreviousMonth}>
+            <ChevronLeft size={24}/>
+          </TouchableOpacity>
+
+          <Text style={styles.monthTitle}>
+            {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+          </Text>
+
+          <TouchableOpacity onPress={goToNextMonth}>
+            <ChevronRight size={24}/>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.calendarGrid}>
+          {dayNames.map((d) => (
+            <Text key={d} style={styles.dayNameText}>{d}</Text>
+          ))}
+
+          {calendarDates.map((date, i) => (
+            <TouchableOpacity
+              key={i}
+              onPress={() => handleSelectDate(date)}
+              disabled={!isDateAvailable(date)}
+              style={[
+                styles.dateCell,
+                isDateSelected(date) && styles.dateCellSelected,
+              ]}
+            >
+              <Text>{date.getDate()}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <TouchableOpacity style={styles.bookButton} onPress={handleBookClass}>
+        <Text style={styles.bookButtonText}>
+          {isFull ? 'Full' : 'Book Next 4 Classes'}
+        </Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  header: { padding: 30, alignItems: 'center' },
+  className: { fontSize: 24, color: '#fff' },
+  classAgeGroup: { color: '#FFD700' },
+  levelBadge: { padding: 8, borderRadius: 10 },
+  levelBadgeBeginner: { backgroundColor: '#e3f2fd' },
+  levelBadgeIntermediate: { backgroundColor: '#fff3e0' },
+  levelBadgeAdvanced: { backgroundColor: '#fce4ec' },
+  levelBadgeText: { color: '#000' },
+  calendarSection: { padding: 16 },
+  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between' },
+  monthTitle: { fontSize: 18 },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayNameText: { width: '14.28%', textAlign: 'center' },
+  dateCell: { width: '14.28%', padding: 10, alignItems: 'center' },
+  dateCellSelected: { backgroundColor: '#007AFF' },
+  bookButton: { padding: 16, backgroundColor: 'gold', margin: 20 },
+  bookButtonText: { textAlign: 'center', fontWeight: 'bold' },
+});
