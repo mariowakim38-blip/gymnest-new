@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useBooking } from '@/contexts/BookingContext';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 
 export default function ClassesScreen() {
   const router = useRouter();
@@ -24,11 +24,57 @@ export default function ClassesScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState('All');
-
-  const { data: classes = [], isLoading } = trpc.classes.getAll.useQuery();
-  const { data: coaches = [] } = trpc.coaches.getAll.useQuery();
+  const [classes, setClasses] = useState<any[]>([]);
+  const [coaches, setCoaches] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const levels = ['All', 'Beginner', 'Intermediate', 'Advanced'];
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      setLoadError('');
+
+      const { data: classesData, error: classesError } = await supabase
+        .from('classes')
+        .select('*');
+
+      const { data: coachesData } = await supabase
+        .from('coaches')
+        .select('*');
+
+      if (classesError) {
+        console.error('CLASSES ERROR:', classesError);
+        setLoadError(classesError.message);
+        setClasses([]);
+      } else {
+        console.log('CLASSES DATA:', classesData);
+
+        const mappedClasses = (classesData ?? []).map((c: any) => ({
+          id: c.id,
+          name: c.name ?? '',
+          ageGroup: c.age_group ?? '',
+          level: c.level ?? '',
+          day: c.day ?? '',
+          time: c.time ?? '',
+          duration: c.duration ?? '',
+          coachId: c.coach_id ?? null,
+          capacity: c.capacity ?? 0,
+          enrolled: c.enrolled ?? 0,
+          description: c.description ?? '',
+          dayOfWeek: c.day_of_week ?? 0,
+        }));
+
+        setClasses(mappedClasses);
+      }
+
+      setCoaches(coachesData ?? []);
+      setIsLoading(false);
+    };
+
+    fetchData();
+  }, []);
 
   const filteredClasses = classes.filter((cls: any) => {
     const name = cls.name || '';
@@ -131,9 +177,15 @@ export default function ClassesScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>Loading classes...</Text>
           </View>
+        ) : loadError ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>Error: {loadError}</Text>
+          </View>
         ) : filteredClasses.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No classes found</Text>
+            <Text style={styles.emptyStateText}>
+              No classes found. Loaded: {classes.length}
+            </Text>
           </View>
         ) : (
           filteredClasses.map((cls: any) => {
@@ -333,6 +385,7 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 16,
     color: Colors.textLight,
+    textAlign: 'center',
   },
   classCard: {
     backgroundColor: Colors.white,
