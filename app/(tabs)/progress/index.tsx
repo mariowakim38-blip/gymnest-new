@@ -1,23 +1,113 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
 import { Trophy, Calendar, TrendingUp } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { useBooking } from '@/contexts/BookingContext';
-import { classes } from '@/constants/mockData';
+import { supabase } from '@/lib/supabase';
 
 export default function ProgressScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { getStudentBookings } = useBooking();
+
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [classesMap, setClassesMap] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(false);
+
+  const children = user?.children || [];
+
+  useEffect(() => {
+    const fetchProgressData = async () => {
+      if (!isAuthenticated || !user || children.length === 0) return;
+
+      setLoading(true);
+
+      const childIds = children.map((child: any) => child.id);
+
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('*')
+        .in('child_id', childIds)
+        .order('booking_date', { ascending: true });
+
+      if (bookingsError) {
+        console.error('Progress bookings error:', bookingsError);
+        setBookings([]);
+        setLoading(false);
+        return;
+      }
+
+      const classIds = Array.from(
+        new Set((bookingsData ?? []).map((b: any) => String(b.class_id)))
+      );
+
+      let classMap: Record<string, any> = {};
+
+      if (classIds.length > 0) {
+        const { data: classesData, error: classesError } = await supabase
+          .from('classes')
+          .select('id, name, age_group, day, time, duration, level');
+
+        if (classesError) {
+          console.error('Progress classes error:', classesError);
+        } else {
+          (classesData ?? []).forEach((cls: any) => {
+            classMap[String(cls.id)] = cls;
+          });
+        }
+      }
+
+      setBookings(bookingsData ?? []);
+      setClassesMap(classMap);
+      setLoading(false);
+    };
+
+    fetchProgressData();
+  }, [isAuthenticated, user?.id]);
+
+  const getChildBookings = (childId: string) => {
+    return bookings.filter((booking) => String(booking.child_id) === String(childId));
+  };
+
+  const getEnrolledClasses = (childBookings: any[]) => {
+    const map = new Map<string, any>();
+
+    childBookings.forEach((booking) => {
+      const cls = classesMap[String(booking.class_id)];
+
+      if (cls) {
+        map.set(String(cls.id), {
+          id: cls.id,
+          name: cls.name,
+          ageGroup: cls.age_group,
+          day: cls.day,
+          time: cls.time,
+          duration: cls.duration,
+          level: cls.level,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  };
+
+  const getAttendancePercentage = (childBookings: any[]) => {
+    const marked = childBookings.filter((booking) => booking.attended !== null);
+
+    if (marked.length === 0) return 0;
+
+    const present = marked.filter((booking) => booking.attended === true).length;
+
+    return Math.round((present / marked.length) * 100);
+  };
 
   if (!isAuthenticated || !user) {
     return (
@@ -39,10 +129,6 @@ export default function ProgressScreen() {
     );
   }
 
-  const children = user.children || [];
-
-
-
   return (
     <ScrollView
       style={styles.container}
@@ -57,12 +143,16 @@ export default function ProgressScreen() {
             Add your children to track their progress
           </Text>
         </View>
+      ) : loading ? (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.emptyStateText}>Loading progress...</Text>
+        </View>
       ) : (
-        children.map((child) => {
-          const studentBookings = getStudentBookings(child.id);
-          const enrolledClasses = classes.filter((cls) =>
-            studentBookings.some((b) => b.classId === cls.id)
-          );
+        children.map((child: any) => {
+          const childBookings = getChildBookings(child.id);
+          const enrolledClasses = getEnrolledClasses(childBookings);
+          const attendance = getAttendancePercentage(childBookings);
 
           return (
             <View key={child.id} style={styles.studentSection}>
@@ -75,26 +165,30 @@ export default function ProgressScreen() {
                   <View style={styles.headerTriangleShape} />
                   <View style={styles.headerGlow} />
                 </View>
+
                 <View style={styles.studentHeaderContent}>
                   <View style={styles.studentAvatar}>
                     <Text style={styles.studentAvatarText}>
                       {child.name.charAt(0)}
                     </Text>
                   </View>
+
                   <View style={styles.studentHeaderInfo}>
                     <Text style={styles.studentName}>{child.name}</Text>
                     <Text style={styles.studentAge}>{child.age} years old</Text>
                   </View>
                 </View>
+
                 <View style={styles.statsContainer}>
                   <View style={styles.statItem}>
                     <Text style={styles.statValue}>{enrolledClasses.length}</Text>
                     <Text style={styles.statLabel}>Classes</Text>
                   </View>
+
                   <View style={styles.statDivider} />
 
                   <View style={styles.statItem}>
-                    <Text style={styles.statValue}>95%</Text>
+                    <Text style={styles.statValue}>{attendance}%</Text>
                     <Text style={styles.statLabel}>Attendance</Text>
                   </View>
                 </View>
@@ -105,21 +199,27 @@ export default function ProgressScreen() {
                   <View style={styles.contentCircle1} />
                   <View style={styles.contentCircle2} />
                 </View>
+
                 <View style={styles.sectionHeader}>
                   <Calendar color={Colors.primary} size={20} />
                   <Text style={styles.sectionTitle}>Enrolled Classes</Text>
                 </View>
+
                 {enrolledClasses.length === 0 ? (
                   <Text style={styles.noDataText}>No classes enrolled yet</Text>
                 ) : (
-                  enrolledClasses.map((cls) => (
+                  enrolledClasses.map((cls: any) => (
                     <View key={cls.id} style={styles.classItem}>
                       <View style={styles.classItemLeft}>
                         <Text style={styles.classItemName}>{cls.name}</Text>
                         <Text style={styles.classItemTime}>
-                          {cls.day}, {cls.time}
+                          {cls.day}, {cls.time} ({cls.duration})
+                        </Text>
+                        <Text style={styles.classItemLevel}>
+                          {cls.level} • {cls.ageGroup}
                         </Text>
                       </View>
+
                       <View style={styles.progressBadge}>
                         <TrendingUp color={Colors.success} size={16} />
                       </View>
@@ -161,6 +261,7 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     textAlign: 'center',
     marginBottom: 24,
+    marginTop: 12,
   },
   loginButton: {
     backgroundColor: Colors.gold,
@@ -200,10 +301,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 165, 0, 0.15)',
     borderWidth: 2,
     borderColor: 'rgba(255, 165, 0, 0.25)',
-    shadowColor: '#FFA500',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 25,
   },
   headerTriangleShape: {
     position: 'absolute' as const,
@@ -229,10 +326,6 @@ const styles = StyleSheet.create({
     height: 70,
     borderRadius: 35,
     backgroundColor: 'rgba(255, 107, 157, 0.15)',
-    shadowColor: '#FF6B9D',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 18,
   },
   studentHeaderContent: {
     flexDirection: 'row',
@@ -320,10 +413,6 @@ const styles = StyleSheet.create({
     height: 45,
     borderRadius: 22.5,
     backgroundColor: 'rgba(255, 165, 0, 0.08)',
-    shadowColor: '#FFA500',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -363,6 +452,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textLight,
   },
+  classItemLevel: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: '600' as const,
+    marginTop: 3,
+  },
   progressBadge: {
     width: 32,
     height: 32,
@@ -371,5 +466,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
 });
