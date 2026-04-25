@@ -8,7 +8,15 @@ import {
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Href } from 'expo-router';
-import { Clock, Users, Calendar, MapPin, Award, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import {
+  Clock,
+  Users,
+  Calendar,
+  MapPin,
+  Award,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { classes, coaches } from '@/constants/mockData';
@@ -20,50 +28,28 @@ export default function ClassDetailScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const { bookMultipleDates, getStudentBookings, getClassBookings } = useBooking();
-  const [isBooking, setIsBooking] = useState<boolean>(false);
-  const [selectedDate] = useState<string>('');
-  const today = new Date(2025, 9, 11);
-  const [currentMonth] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const [isBooking, setIsBooking] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
 
   const classData = classes.find((c) => c.id === classId);
   const coach = classData ? coaches.find((c) => c.id === classData.coachId) : null;
 
-  const calendarDates = useMemo(() => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
-    
-    const dates: Date[] = [];
-    const current = new Date(startDate);
-    
-    while (dates.length < 42) {
-      dates.push(new Date(current));
-      current.setDate(current.getDate() + 1);
-    }
-    
-    return dates;
-  }, [currentMonth]);
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
 
-  const isDateAvailable = (date: Date) => {
-    if (!classData) return false;
-    const startDate = new Date(today);
-    startDate.setHours(0, 0, 0, 0);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
-    return date.getDay() === classData.dayOfWeek && checkDate >= startDate;
-  };
-
-  const isDateSelected = (date: Date) => {
-    if (!selectedDate) return false;
-    const selected = new Date(selectedDate);
-    return date.toDateString() === selected.toDateString();
-  };
-
-  const isCurrentMonth = (date: Date) => {
-    return date.getMonth() === currentMonth.getMonth();
-  };
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const formatDateString = (date: Date) => {
     const year = date.getFullYear();
@@ -72,7 +58,84 @@ export default function ClassDetailScreen() {
     return `${year}-${month}-${day}`;
   };
 
+  const calendarDates = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startDate = new Date(firstDay);
 
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    const dates: Date[] = [];
+    const current = new Date(startDate);
+
+    while (dates.length < 42) {
+      dates.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dates;
+  }, [currentMonth]);
+
+  const isDateAvailable = (date: Date) => {
+    if (!classData) return false;
+
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    return checkDate >= today && checkDate.getDay() === classData.dayOfWeek;
+  };
+
+  const isDateSelected = (date: Date) => {
+    return selectedDate === formatDateString(date);
+  };
+
+  const isCurrentMonth = (date: Date) => {
+    return date.getMonth() === currentMonth.getMonth();
+  };
+
+  const goToPreviousMonth = () => {
+    setCurrentMonth((prev) => {
+      return new Date(prev.getFullYear(), prev.getMonth() - 1, 1);
+    });
+  };
+
+  const goToNextMonth = () => {
+    setCurrentMonth((prev) => {
+      return new Date(prev.getFullYear(), prev.getMonth() + 1, 1);
+    });
+  };
+
+  const handleSelectDate = (date: Date) => {
+    if (!isDateAvailable(date)) return;
+    setSelectedDate(formatDateString(date));
+  };
+
+  const getNext4Dates = () => {
+    if (!classData) return [];
+
+    const dates: string[] = [];
+    const startDate = selectedDate
+      ? new Date(`${selectedDate}T00:00:00`)
+      : new Date(today);
+
+    startDate.setHours(0, 0, 0, 0);
+
+    const currentDate = new Date(startDate);
+
+    while (dates.length < 4) {
+      const checkDate = new Date(currentDate);
+      checkDate.setHours(0, 0, 0, 0);
+
+      if (checkDate >= today && checkDate.getDay() === classData.dayOfWeek) {
+        dates.push(formatDateString(checkDate));
+      }
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return dates;
+  };
 
   if (!classData) {
     return (
@@ -82,30 +145,17 @@ export default function ClassDetailScreen() {
     );
   }
 
-  const bookingsForSelectedDate = selectedDate ? getClassBookings(classId, selectedDate) : [];
-  const isFull = bookingsForSelectedDate.length >= classData.capacity;
-  const spotsLeft = classData.capacity - bookingsForSelectedDate.length;
+  const bookingsForSelectedDate = selectedDate
+    ? getClassBookings(classId, selectedDate)
+    : [];
 
-  const getNext4Dates = () => {
-    if (!classData) return [];
-    
-    const dates: string[] = [];
-    const startDate = new Date(today);
-    startDate.setHours(0, 0, 0, 0);
-    let currentDate = new Date(startDate);
-    
-    while (dates.length < 4) {
-      const checkDate = new Date(currentDate);
-      checkDate.setHours(0, 0, 0, 0);
-      
-      if (currentDate.getDay() === classData.dayOfWeek && checkDate >= startDate) {
-        dates.push(formatDateString(currentDate));
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    
-    return dates;
-  };
+  const isFull = selectedDate
+    ? bookingsForSelectedDate.length >= classData.capacity
+    : false;
+
+  const spotsLeft = selectedDate
+    ? classData.capacity - bookingsForSelectedDate.length
+    : classData.capacity;
 
   const handleBookClass = async () => {
     if (!isAuthenticated || !user) {
@@ -123,45 +173,54 @@ export default function ClassDetailScreen() {
 
     const student = user.children[0];
     const studentUniqueId = `${user.id}-${student.id}`;
-    console.log('Booking for student:', student.name, 'with ID:', studentUniqueId);
-    console.log('User ID:', user.id, 'Child ID:', student.id);
-    
     const datesToBook = getNext4Dates();
-    
+
     if (datesToBook.length === 0) {
       Alert.alert('Error', 'No available dates found for this class');
       return;
     }
 
-    console.log('Dates to book:', datesToBook);
-
     const existingBookings = getStudentBookings(studentUniqueId);
-    const alreadyBookedDates = datesToBook.filter(date => 
-      existingBookings.some((b) => b.classId === classId && b.classDate === date)
+
+    const alreadyBookedDates = datesToBook.filter((date) =>
+      existingBookings.some(
+        (booking) => booking.classId === classId && booking.classDate === date
+      )
     );
 
     if (alreadyBookedDates.length > 0) {
       Alert.alert(
-        'Already Booked', 
-        `This student is already enrolled in this class on ${alreadyBookedDates.length} of the next 4 dates. Please cancel existing bookings first.`
+        'Already Booked',
+        `This student is already booked on ${alreadyBookedDates.length} of these dates.`
       );
       return;
     }
 
-    const datesList = datesToBook.map(d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).join(', ');
-    
+    const datesList = datesToBook
+      .map((date) =>
+        new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        })
+      )
+      .join(', ');
+
     Alert.alert(
       'Book 4 Classes',
       `This will book the next 4 ${classData.day} classes at ${classData.time}:\n\n${datesList}\n\nContinue?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Book All', 
+        {
+          text: 'Book All',
           onPress: async () => {
             setIsBooking(true);
-            console.log('Starting booking process...');
-            const result = await bookMultipleDates(classId, studentUniqueId, datesToBook);
-            console.log('Booking result:', result);
+
+            const result = await bookMultipleDates(
+              classId,
+              studentUniqueId,
+              datesToBook
+            );
+
             setIsBooking(false);
 
             if (result.success) {
@@ -171,18 +230,16 @@ export default function ClassDetailScreen() {
                 [{ text: 'OK', onPress: () => router.back() }]
               );
             } else {
-              const errorMsg = result.error || 'Failed to book classes. Please try again.';
-              console.error('Booking failed:', errorMsg);
-              Alert.alert('Error', errorMsg);
+              Alert.alert(
+                'Error',
+                result.error || 'Failed to book classes. Please try again.'
+              );
             }
-          }
+          },
         },
       ]
     );
   };
-
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
     <ScrollView
@@ -190,12 +247,10 @@ export default function ClassDetailScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <LinearGradient
-        colors={[Colors.primary, '#2a3f5f']}
-        style={styles.header}
-      >
+      <LinearGradient colors={[Colors.primary, '#2a3f5f']} style={styles.header}>
         <Text style={styles.className}>{classData.name}</Text>
         <Text style={styles.classAgeGroup}>{classData.ageGroup}</Text>
+
         <View
           style={[
             styles.levelBadge,
@@ -229,9 +284,7 @@ export default function ClassDetailScreen() {
           <View style={styles.detailCard}>
             <Users color={Colors.gold} size={24} />
             <Text style={styles.detailLabel}>Capacity</Text>
-            <Text style={styles.detailValue}>
-              {classData.capacity} spots
-            </Text>
+            <Text style={styles.detailValue}>{classData.capacity} spots</Text>
             <Text style={styles.detailSubValue}>per class</Text>
           </View>
 
@@ -245,18 +298,20 @@ export default function ClassDetailScreen() {
       </View>
 
       <View style={styles.calendarSection}>
-        <Text style={styles.sectionTitle}>Select a Date</Text>
-        
+        <Text style={styles.sectionTitle}>Select a Start Date</Text>
+
         <View style={styles.calendarHeader}>
-          <View style={styles.monthButton}>
+          <TouchableOpacity style={styles.monthButton} onPress={goToPreviousMonth}>
             <ChevronLeft color={Colors.mediumGray} size={24} />
-          </View>
+          </TouchableOpacity>
+
           <Text style={styles.monthTitle}>
             {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
           </Text>
-          <View style={styles.monthButton}>
+
+          <TouchableOpacity style={styles.monthButton} onPress={goToNextMonth}>
             <ChevronRight color={Colors.mediumGray} size={24} />
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.calendarGrid}>
@@ -265,13 +320,14 @@ export default function ClassDetailScreen() {
               <Text style={styles.dayNameText}>{day}</Text>
             </View>
           ))}
+
           {calendarDates.map((date, index) => {
             const available = isDateAvailable(date);
             const selected = isDateSelected(date);
             const inMonth = isCurrentMonth(date);
-            
+
             return (
-              <View
+              <TouchableOpacity
                 key={index}
                 style={[
                   styles.dateCell,
@@ -279,6 +335,9 @@ export default function ClassDetailScreen() {
                   available && styles.dateCellAvailable,
                   selected && styles.dateCellSelected,
                 ]}
+                disabled={!available}
+                onPress={() => handleSelectDate(date)}
+                activeOpacity={0.7}
               >
                 <Text
                   style={[
@@ -290,24 +349,34 @@ export default function ClassDetailScreen() {
                 >
                   {date.getDate()}
                 </Text>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
 
-        {selectedDate && (
+        {selectedDate ? (
           <View style={styles.selectedDateInfo}>
-            <Text style={styles.selectedDateLabel}>Selected Date:</Text>
+            <Text style={styles.selectedDateLabel}>Selected Start Date:</Text>
             <Text style={styles.selectedDateValue}>
-              {new Date(selectedDate).toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
+              {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
               })}
             </Text>
+
             <Text style={styles.availabilityInfo}>
-              {`${bookingsForSelectedDate.length}/${classData.capacity} spots booked${isFull ? ' (Full - Waitlist Available)' : ` (${spotsLeft} spots left)`}`}
+              {`${bookingsForSelectedDate.length}/${classData.capacity} spots booked${
+                isFull ? ' (Full - Waitlist Available)' : ` (${spotsLeft} spots left)`
+              }`}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.selectedDateInfo}>
+            <Text style={styles.selectedDateLabel}>No date selected</Text>
+            <Text style={styles.selectedDateValue}>
+              Tap an available {classData.day} to choose when the 4 bookings start.
             </Text>
           </View>
         )}
@@ -316,18 +385,22 @@ export default function ClassDetailScreen() {
       {coach && (
         <View style={styles.coachSection}>
           <Text style={styles.sectionTitle}>Your Coach</Text>
+
           <View style={styles.coachCard}>
             <View style={styles.coachAvatar}>
               <Text style={styles.coachAvatarText}>{coach.name.charAt(0)}</Text>
             </View>
+
             <View style={styles.coachInfo}>
               <Text style={styles.coachName}>{coach.name}</Text>
+
               <View style={styles.coachSpecialization}>
                 <Award color={Colors.primary} size={16} />
                 <Text style={styles.coachSpecializationText}>
                   {coach.specialization}
                 </Text>
               </View>
+
               <Text style={styles.coachExperience}>{coach.experience} experience</Text>
             </View>
           </View>
@@ -449,11 +522,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold' as const,
     color: Colors.text,
+    textAlign: 'center',
   },
   detailSubValue: {
     fontSize: 12,
     color: Colors.textLight,
     marginTop: 2,
+    textAlign: 'center',
   },
   calendarSection: {
     paddingHorizontal: 16,
