@@ -3,14 +3,14 @@ import { publicProcedure } from '../../create-context';
 export const getAllClassesProcedure = publicProcedure.query(async ({ ctx }) => {
   const { data, error } = await ctx.supabase
     .from('classes')
-    .select('*')
-    .order('day', { ascending: true })
-    .order('time', { ascending: true });
+    .select('*');
 
   if (error) {
-    console.error('GET ALL CLASSES ERROR:', error);
+    console.error('SUPABASE CLASSES ERROR:', error);
     throw new Error(error.message);
   }
+
+  console.log('SUPABASE CLASSES DATA:', data);
 
   return (data ?? []).map((c: any) => ({
     id: c.id,
