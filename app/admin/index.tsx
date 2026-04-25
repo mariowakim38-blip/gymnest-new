@@ -1163,39 +1163,6 @@ export default function AdminPanel() {
           </View>
         )}
         </ScrollView>
-            </View>
-            {selectedClassId && getClassDates(selectedClassId).length > 0 && (
-              <View style={styles.dateSelector}>
-                <Text style={styles.label}>Select Date:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {getClassDates(selectedClassId).map((date: string) => (
-                    <TouchableOpacity key={date} style={[styles.dateChip, selectedClassDate === date && styles.dateChipActive]} onPress={() => setSelectedClassDate(date)}>
-                      <Text style={[styles.dateChipText, selectedClassDate === date && styles.dateChipTextActive]}>{new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            {selectedClassId && selectedClassDate && (
-              <View>
-                {getBookingsForClassDate(selectedClassId, selectedClassDate).map((booking) => {
-                  const [userId, childId] = booking.studentId.split('::');
-                  const parent = allUsers.find(u => u.id === userId);
-                  const child = parent?.children?.find(c => c.id === childId);
-                  return (
-                    <TouchableOpacity key={booking.id} style={[styles.attendanceCard, booking.attended === true && styles.attendanceCardPresent]} onPress={() => handleMarkAttendance(booking.id, booking.attended === true ? undefined : true)}>
-                      <View style={styles.attendanceInfo}>
-                        <Text style={styles.attendanceName}>{child?.name || 'Unknown'}</Text>
-                        {booking.attended === true && <Check color={Colors.success} size={20} />}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        )}
-        </ScrollView>
       </View>
 
       {showAnnouncementModal && (
