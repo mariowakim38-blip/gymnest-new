@@ -14,21 +14,30 @@ import { trpc, trpcReactClient } from "@/lib/trpc";
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === 'auth';
+    const inAuthGroup = segments[0] === "auth";
+    const inAdminGroup = segments[0] === "admin";
 
     if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/auth/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/(tabs)/(home)');
+      router.replace("/auth/login");
+      return;
     }
-  }, [isAuthenticated, isLoading, segments, router]);
+
+    if (isAuthenticated && inAuthGroup) {
+      router.replace(user?.role === "admin" ? "/admin" : "/(tabs)/(home)");
+      return;
+    }
+
+    if (isAuthenticated && inAdminGroup && user?.role !== "admin") {
+      router.replace("/(tabs)/(home)");
+    }
+  }, [isAuthenticated, isLoading, segments, router, user?.role]);
 
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>

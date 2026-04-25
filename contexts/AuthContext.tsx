@@ -18,12 +18,18 @@ export interface User {
   }[];
 }
 
+type AuthResult = {
+  success: boolean;
+  error?: string;
+  user?: User | null;
+};
+
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [session, setSession] = useState<Session | null>(null);
 
-  const clearSupabaseStorage = () => {
+  const clearSupabaseStorage = useCallback(() => {
     if (typeof window === 'undefined') return;
 
     Object.keys(window.localStorage).forEach((key) => {
@@ -36,12 +42,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
     });
 
-    window.localStorage.removeItem('currentUser');
     window.localStorage.removeItem('users');
+    window.localStorage.removeItem('currentUser');
     window.sessionStorage.clear();
-  };
+  }, []);
 
-  const loadUserProfile = useCallback(async (userId: string) => {
+  const loadUserProfile = useCallback(async (userId: string): Promise<User | null> => {
     try {
       console.log('Loading profile for user ID:', userId);
 
@@ -63,14 +69,23 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         return null;
       }
 
-      const { data: childrenData } = await supabase
+      const { data: childrenData, error: childrenError } = await supabase
         .from('children')
         .select('*')
         .eq('profile_id', profileData.id);
 
+      if (childrenError) {
+        console.error('Children load error:', childrenError);
+      }
+
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser();
+
+      const role: User['role'] =
+        profileData.role === 'admin' || profileData.role === 'coach'
+          ? profileData.role
+          : 'parent';
 
       const userData: User = {
         id: profileData.id,
@@ -79,10 +94,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         email: authUser?.email || '',
         phoneNumber: profileData.phone_number || '',
         password: '',
-        role: profileData.role || 'parent',
+        role,
         children: childrenData || [],
       };
 
+      console.log('Setting user with role:', userData.role);
       setUser(userData);
       return userData;
     } catch (error) {
@@ -100,15 +116,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setIsLoading(true);
 
         const {
-          data: { session },
+          data: { session: currentSession },
         } = await supabase.auth.getSession();
 
         if (!isMounted) return;
 
-        setSession(session);
+        setSession(currentSession);
 
-        if (session?.user) {
-          await loadUserProfile(session.user.id);
+        if (currentSession?.user) {
+          await loadUserProfile(currentSession.user.id);
         } else {
           setUser(null);
         }
@@ -117,9 +133,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setUser(null);
         setSession(null);
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       }
     };
 
@@ -135,8 +149,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setSession(null);
-        setIsLoading(false);
         clearSupabaseStorage();
+        setIsLoading(false);
         return;
       }
 
@@ -145,7 +159,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (newSession?.user) {
         setIsLoading(true);
         await loadUserProfile(newSession.user.id);
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       } else {
         setUser(null);
         setIsLoading(false);
@@ -156,77 +170,60 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [loadUserProfile]);
+  }, [clearSupabaseStorage, loadUserProfile]);
 
   const initializeAdminAccount = useCallback(async () => {
     console.log('Admin account must be created in Supabase dashboard.');
   }, []);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      try {
-        setIsLoading(true);
+  const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
+    try {
+      setIsLoading(true);
+      console.log('Login - Attempting login for:', email);
 
-        console.log('Login - Attempting login for:', email);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+      if (error) {
+        console.log('Login error:', error.message);
+        return { success: false, error: error.message };
+      }
 
-        if (error) {
-          console.log('Login error:', error.message);
-          return { success: false, error: error.message };
-        }
+      if (!data.user) {
+        return { success: false, error: 'Login failed' };
+      }
 
-        if (!data.user) {
-          return { success: false, error: 'Login failed' };
-        }
+      setSession(data.session);
 
-        setSession(data.session);
+      const loadedUser = await loadUserProfile(data.user.id);
 
-        const loadedUser = await loadUserProfile(data.user.id);
-
-        if (!loadedUser) {
-          await supabase.auth.signOut({ scope: 'global' });
-          clearSupabaseStorage();
-
-          return {
-            success: false,
-            error: 'No profile found for this account.',
-          };
-        }
-
-        if (typeof window !== 'undefined') {
-          if (loadedUser.role === 'admin') {
-            window.location.replace('/admin');
-          } else {
-            window.location.replace('/');
-          }
-        }
-
-        return { success: true, user: loadedUser };
-      } catch (error) {
-        console.error('Login failed:', error);
-
+      if (!loadedUser) {
+        await supabase.auth.signOut({ scope: 'global' });
+        clearSupabaseStorage();
         return {
           success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Login failed. Please try again.',
+          error: 'No profile found for this account. Create a row in the profiles table.',
         };
-      } finally {
-        setIsLoading(false);
       }
-    },
-    [loadUserProfile]
-  );
 
-  const logout = useCallback(async () => {
+      console.log('Login successful for:', email, 'role:', loadedUser.role);
+      return { success: true, user: loadedUser };
+    } catch (error) {
+      console.error('Login failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Login failed. Please try again.',
+      };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearSupabaseStorage, loadUserProfile]);
+
+  const logout = useCallback(async (): Promise<{ success: boolean }> => {
     try {
       console.log('FORCE LOGOUT START');
-
       setIsLoading(true);
 
       await supabase.auth.signOut({ scope: 'global' });
@@ -240,7 +237,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
 
       console.log('FORCE LOGOUT SUCCESS');
-
       return { success: true };
     } catch (error) {
       console.log('FORCE LOGOUT ERROR:', error);
@@ -257,220 +253,189 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [clearSupabaseStorage]);
 
-  const register = useCallback(
-    async (
-      name: string,
-      username: string,
-      email: string,
-      password: string,
-      phoneNumber: string,
-      childName: string,
-      childAge: number,
-      secondChildName?: string,
-      secondChildAge?: number,
-      isAdmin?: boolean
-    ) => {
-      setIsLoading(true);
+  const register = useCallback(async (
+    name: string,
+    username: string,
+    email: string,
+    password: string,
+    phoneNumber: string,
+    childName: string,
+    childAge: number,
+    secondChildName?: string,
+    secondChildAge?: number,
+    isAdmin?: boolean
+  ): Promise<AuthResult> => {
+    setIsLoading(true);
 
-      try {
-        console.log('Registration - Attempting registration for:', username);
+    try {
+      console.log('Registration - Attempting registration for:', username);
 
-        const { data: authData, error: authError } =
-          await supabase.auth.signUp({
-            email,
-            password,
-          });
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
 
-        if (authError) {
-          return { success: false, error: authError.message };
-        }
-
-        if (!authData.user) {
-          return { success: false, error: 'Registration failed' };
-        }
-
-        const children = [];
-
-        if (childName && childAge) {
-          children.push({ name: childName, age: childAge });
-        }
-
-        if (secondChildName && secondChildAge) {
-          children.push({
-            name: secondChildName,
-            age: secondChildAge,
-          });
-        }
-
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: authData.user.id,
-            name,
-            username,
-            phone_number: phoneNumber.startsWith('+961')
-              ? phoneNumber
-              : `+961${phoneNumber}`,
-            role: isAdmin ? 'admin' : 'parent',
-          })
-          .select()
-          .single();
-
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
-          await supabase.auth.signOut({ scope: 'global' });
-          clearSupabaseStorage();
-
-          return {
-            success: false,
-            error: profileError.message || 'Failed to create profile',
-          };
-        }
-
-        if (children.length > 0) {
-          const childrenInserts = children.map((child) => ({
-            profile_id: profileData.id,
-            name: child.name,
-            age: child.age,
-          }));
-
-          const { error: childrenError } = await supabase
-            .from('children')
-            .insert(childrenInserts);
-
-          if (childrenError) {
-            console.error('Failed to add children:', childrenError);
-          }
-        }
-
-        const loadedUser = await loadUserProfile(authData.user.id);
-
-        return { success: true, user: loadedUser };
-      } catch (error) {
-        console.error('Registration failed:', error);
-
-        return {
-          success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Registration failed. Please try again.',
-        };
-      } finally {
-        setIsLoading(false);
+      if (authError) {
+        return { success: false, error: authError.message };
       }
-    },
-    [loadUserProfile]
-  );
 
-  const updateProfile = useCallback(
-    async (
-      name: string,
-      email: string,
-      phoneNumber: string,
-      children: { id: string; name: string; age: number }[]
-    ) => {
-      try {
-        if (!user) {
-          return { success: false, error: 'No user logged in' };
-        }
+      if (!authData.user) {
+        return { success: false, error: 'Registration failed' };
+      }
 
-        const cleanPhoneNumber = phoneNumber.startsWith('+961')
-          ? phoneNumber
-          : `+961${phoneNumber}`;
+      const children: { name: string; age: number }[] = [];
 
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            name,
-            phone_number: cleanPhoneNumber,
-          })
-          .eq('id', user.id);
+      if (childName && childAge) {
+        children.push({ name: childName, age: childAge });
+      }
 
-        if (error) {
-          return { success: false, error: error.message };
-        }
+      if (secondChildName && secondChildAge) {
+        children.push({ name: secondChildName, age: secondChildAge });
+      }
 
-        const { data: existingChildren } = await supabase
-          .from('children')
-          .select('*')
-          .eq('profile_id', user.id);
-
-        const existingIds = (existingChildren || []).map((c) => c.id);
-        const newIds = children.map((c) => c.id);
-
-        const toDelete = existingIds.filter((id) => !newIds.includes(id));
-        const toUpdate = children.filter((c) => existingIds.includes(c.id));
-        const toInsert = children.filter((c) => !existingIds.includes(c.id));
-
-        if (toDelete.length > 0) {
-          await supabase.from('children').delete().in('id', toDelete);
-        }
-
-        for (const child of toUpdate) {
-          await supabase
-            .from('children')
-            .update({
-              name: child.name,
-              age: child.age,
-            })
-            .eq('id', child.id);
-        }
-
-        if (toInsert.length > 0) {
-          const childrenInserts = toInsert.map((child) => ({
-            profile_id: user.id,
-            name: child.name,
-            age: child.age,
-          }));
-
-          await supabase.from('children').insert(childrenInserts);
-        }
-
-        setUser({
-          ...user,
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: authData.user.id,
           name,
-          email,
-          phoneNumber: cleanPhoneNumber,
-          children,
-        });
+          username,
+          phone_number: phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`,
+          role: isAdmin ? 'admin' : 'parent',
+        })
+        .select()
+        .single();
 
-        return { success: true };
-      } catch (error) {
-        console.error('Update profile failed:', error);
-
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Update failed',
-        };
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        await supabase.auth.signOut({ scope: 'global' });
+        clearSupabaseStorage();
+        return { success: false, error: profileError.message || 'Failed to create profile' };
       }
-    },
-    [user]
-  );
 
-  return useMemo(
-    () => ({
-      user,
-      isLoading,
-      isAuthenticated: !!user && !!session,
-      session,
-      login,
-      logout,
-      register,
-      updateProfile,
-      initializeAdminAccount,
-    }),
-    [
-      user,
-      isLoading,
-      session,
-      login,
-      logout,
-      register,
-      updateProfile,
-      initializeAdminAccount,
-    ]
-  );
+      if (children.length > 0) {
+        const childrenInserts = children.map((child) => ({
+          profile_id: profileData.id,
+          name: child.name,
+          age: child.age,
+        }));
+
+        const { error: childrenError } = await supabase
+          .from('children')
+          .insert(childrenInserts);
+
+        if (childrenError) {
+          console.error('Failed to add children:', childrenError);
+        }
+      }
+
+      const loadedUser = await loadUserProfile(authData.user.id);
+      console.log('Registration successful for:', username);
+      return { success: true, user: loadedUser };
+    } catch (error) {
+      console.error('Registration failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Registration failed. Please try again.',
+      };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearSupabaseStorage, loadUserProfile]);
+
+  const updateProfile = useCallback(async (
+    name: string,
+    email: string,
+    phoneNumber: string,
+    children: { id: string; name: string; age: number }[]
+  ) => {
+    try {
+      if (!user) return { success: false, error: 'No user logged in' };
+
+      const cleanPhoneNumber = phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`;
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          name,
+          phone_number: cleanPhoneNumber,
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const { data: existingChildren } = await supabase
+        .from('children')
+        .select('*')
+        .eq('profile_id', user.id);
+
+      const existingIds = (existingChildren || []).map((c) => c.id);
+      const newIds = children.map((c) => c.id);
+
+      const toDelete = existingIds.filter((id) => !newIds.includes(id));
+      const toUpdate = children.filter((c) => existingIds.includes(c.id));
+      const toInsert = children.filter((c) => !existingIds.includes(c.id));
+
+      if (toDelete.length > 0) {
+        await supabase.from('children').delete().in('id', toDelete);
+      }
+
+      for (const child of toUpdate) {
+        await supabase
+          .from('children')
+          .update({ name: child.name, age: child.age })
+          .eq('id', child.id);
+      }
+
+      if (toInsert.length > 0) {
+        const childrenInserts = toInsert.map((child) => ({
+          profile_id: user.id,
+          name: child.name,
+          age: child.age,
+        }));
+
+        await supabase.from('children').insert(childrenInserts);
+      }
+
+      setUser({
+        ...user,
+        name,
+        email,
+        phoneNumber: cleanPhoneNumber,
+        children,
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Update profile failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Update failed',
+      };
+    }
+  }, [user]);
+
+  return useMemo(() => ({
+    user,
+    isLoading,
+    isAuthenticated: !!user && !!session,
+    session,
+    login,
+    logout,
+    register,
+    updateProfile,
+    initializeAdminAccount,
+  }), [
+    user,
+    isLoading,
+    session,
+    login,
+    logout,
+    register,
+    updateProfile,
+    initializeAdminAccount,
+  ]);
 });

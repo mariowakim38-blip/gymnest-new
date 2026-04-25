@@ -35,8 +35,9 @@ export default function LoginScreen() {
       const result = await login(email, password);
       
       if (result.success) {
-        console.log('Login successful, navigating to home');
-        router.replace('/(tabs)/(home)');
+        const destination = result.user?.role === 'admin' ? '/admin' : '/(tabs)/(home)';
+        console.log('Login successful, navigating to:', destination);
+        router.replace(destination as Href);
       } else {
         Alert.alert('Error', result.error || 'Login failed. Please try again.');
       }

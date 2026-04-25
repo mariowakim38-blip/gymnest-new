@@ -6,11 +6,6 @@ export const cancelBookingProcedure = protectedProcedure
     bookingId: z.string(),
   }))
   .mutation(async ({ input, ctx }) => {
-    const bookingsEnabled = process.env.ENABLE_BOOKINGS === 'true';
-    if (!bookingsEnabled) {
-      return { success: true };
-    }
-
     const { data: booking, error: lookupError } = await ctx.supabase
       .from('bookings')
       .select('id, profile_id')

@@ -12,30 +12,12 @@ export const bookClassProcedure = protectedProcedure
     isWaitlist: z.boolean().optional(),
   }))
   .mutation(async ({ input, ctx }) => {
-    const bookingsEnabled = process.env.ENABLE_BOOKINGS === 'true';
     const [profileId, childId] = input.studentId.split('-');
     if (!profileId || !childId) {
       throw new Error('Invalid studentId format. Expected format: profileId-childId');
     }
     if (ctx.profile?.role !== 'admin' && ctx.profile?.id !== profileId) {
       throw new Error('You can only create bookings for your own children');
-    }
-
-    if (!bookingsEnabled) {
-      return {
-        success: true,
-        booking: {
-          id: `mock-${Date.now()}`,
-          profile_id: profileId,
-          class_id: input.classId,
-          child_id: childId,
-          booking_date: input.classDate,
-          status: 'confirmed' as const,
-          attended: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      };
     }
 
     const { data: childExists } = await ctx.supabase

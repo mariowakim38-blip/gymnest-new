@@ -44,29 +44,7 @@ export default function ProfileScreen() {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
-          try {
-            console.log('Logging out...');
-
-            await logout();
-
-            if (Platform.OS === 'web' && typeof window !== 'undefined') {
-              window.localStorage.clear();
-              window.sessionStorage.clear();
-              window.location.replace('/auth/login');
-            } else {
-              router.replace('/auth/login' as Href);
-            }
-          } catch (error) {
-            console.log('Logout error:', error);
-
-            if (Platform.OS === 'web' && typeof window !== 'undefined') {
-              window.localStorage.clear();
-              window.sessionStorage.clear();
-              window.location.replace('/auth/login');
-            } else {
-              router.replace('/auth/login' as Href);
-            }
-          }
+          await logout();
         },
       },
     ]);
@@ -183,7 +161,6 @@ export default function ProfileScreen() {
         <View style={styles.decorTriangle} />
         <View style={styles.decorGlow} />
       </View>
-
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
@@ -198,7 +175,6 @@ export default function ProfileScreen() {
         <View style={styles.infoCardShapes}>
           <View style={styles.infoCircle} />
         </View>
-
         <View style={styles.infoItem}>
           <Mail color={Colors.primary} size={20} />
           <View style={styles.infoTextContainer}>
@@ -206,7 +182,6 @@ export default function ProfileScreen() {
             <Text style={styles.infoValue}>{user.email}</Text>
           </View>
         </View>
-
         <View style={[styles.infoItem, { borderBottomWidth: 0 }]}>
           <Phone color={Colors.primary} size={20} />
           <View style={styles.infoTextContainer}>
@@ -348,7 +323,6 @@ export default function ProfileScreen() {
                       <Trash2 color={Colors.error} size={20} />
                     </TouchableOpacity>
                   </View>
-
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Name</Text>
                     <TextInput
@@ -359,7 +333,6 @@ export default function ProfileScreen() {
                       placeholderTextColor={Colors.mediumGray}
                     />
                   </View>
-
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Age</Text>
                     <TextInput

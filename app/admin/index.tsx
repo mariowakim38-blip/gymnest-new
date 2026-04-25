@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import { Stack, useRouter } from 'expo-router';
-import { Users, Calendar, Trash2, Edit2, X, ClipboardCheck, Check, Search, Megaphone, Image as ImageIcon, UserCheck, Plus, Book, CalendarDays } from 'lucide-react-native';
+import { Users, Calendar, Trash2, Edit2, X, ClipboardCheck, Check, Search, Megaphone, Image as ImageIcon, UserCheck, Plus, Book, CalendarDays, LogOut } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth, User } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
@@ -22,7 +22,7 @@ type TabType = 'users' | 'bookings' | 'attendance' | 'announcements' | 'gallery'
 
 export default function AdminPanel() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('announcements');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedClassDate, setSelectedClassDate] = useState<string>('');
@@ -51,6 +51,17 @@ export default function AdminPanel() {
   const [eventForm, setEventForm] = useState({ title: '', date: '', time: '', type: 'Competition' as 'Competition' | 'Workshop' | 'Showcase' | 'Camp', description: '', location: '', imageUrl: '' });
 
   const isAdmin = user?.role === 'admin';
+
+  const handleLogout = async () => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Log out of the admin panel?')) await logout();
+      return;
+    }
+    Alert.alert('Logout', 'Log out of the admin panel?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); } },
+    ]);
+  };
 
   const { data: allUsers = [], isLoading: usersLoading, error: usersError, refetch: refreshUsers } = trpc.users.getAll.useQuery(undefined, {
     enabled: isAdmin,
@@ -143,7 +154,7 @@ export default function AdminPanel() {
   useEffect(() => {
     if (user && user.role !== 'admin') {
       Alert.alert('Access Denied', `You do not have admin privileges.`);
-      router.back();
+      router.replace('/(tabs)/(home)' as any);
     }
   }, [user, router]);
 
@@ -438,6 +449,12 @@ export default function AdminPanel() {
           headerStyle: { backgroundColor: Colors.primary },
           headerTintColor: Colors.white,
           headerTitleStyle: { fontWeight: 'bold' as const },
+          headerRight: () => (
+            <TouchableOpacity style={styles.headerLogoutButton} onPress={handleLogout} activeOpacity={0.8}>
+              <LogOut color={Colors.white} size={18} />
+              <Text style={styles.headerLogoutText}>Logout</Text>
+            </TouchableOpacity>
+          ),
         }}
       />
 
@@ -482,6 +499,11 @@ export default function AdminPanel() {
             <TouchableOpacity style={[styles.tab, activeTab === 'attendance' && styles.tabActive]} onPress={() => setActiveTab('attendance')}>
               <ClipboardCheck color={activeTab === 'attendance' ? Colors.white : Colors.primary} size={20} />
               <Text style={[styles.tabText, activeTab === 'attendance' && styles.tabTextActive]}>Attendance</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.tab, styles.logoutTab]} onPress={handleLogout} activeOpacity={0.8}>
+              <LogOut color={Colors.danger} size={20} />
+              <Text style={[styles.tabText, styles.logoutTabText]}>Logout</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -674,8 +696,17 @@ export default function AdminPanel() {
 
         {activeTab === 'bookings' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>All Bookings</Text>
-            {bookings.map((booking) => {
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>All Bookings</Text>
+              <TouchableOpacity style={styles.smallActionButton} onPress={() => refreshBookings()} activeOpacity={0.8}>
+                <Text style={styles.smallActionButtonText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+            {bookingsLoading ? (
+              <Text style={styles.emptyStateText}>Loading bookings...</Text>
+            ) : bookings.length === 0 ? (
+              <Text style={styles.emptyStateText}>No bookings found. If a user booked while ENABLE_BOOKINGS was false, that booking was temporary and was not saved to Supabase.</Text>
+            ) : bookings.map((booking) => {
               const [userId, childId] = booking.studentId.split('-');
               const parent = allUsers.find(u => u.id === userId);
               const child = parent?.children?.find(c => c.id === childId);
@@ -968,6 +999,10 @@ export default function AdminPanel() {
 }
 
 const styles = StyleSheet.create({
+  headerLogoutButton: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.15)' },
+  headerLogoutText: { color: Colors.white, fontSize: 14, fontWeight: '700' as const },
+  smallActionButton: { backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  smallActionButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700' as const },
   container: {
     flex: 1,
     flexDirection: 'row' as const,
@@ -996,6 +1031,16 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     backgroundColor: Colors.primary,
+  },
+  logoutTab: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: Colors.danger,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
+  logoutTabText: {
+    color: Colors.danger,
+    fontWeight: '700' as const,
   },
   tabText: {
     fontSize: 14,
