@@ -1,103 +1,124 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
 import {
-  Search,
   Clock,
-  Users as UsersIcon,
   ChevronRight,
+  CalendarDays,
+  Sparkles,
+  Users as UsersIcon,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useBooking } from '@/contexts/BookingContext';
 import { supabase } from '@/lib/supabase';
 
+const orderedDays = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+const dayShort: Record<string, string> = {
+  Monday: 'Mon',
+  Tuesday: 'Tue',
+  Wednesday: 'Wed',
+  Thursday: 'Thu',
+  Friday: 'Fri',
+  Saturday: 'Sat',
+};
+
+const timeToMinutes = (timeValue: string) => {
+  if (!timeValue) return 0;
+
+  const [time, modifier] = timeValue.trim().split(' ');
+  let [hours, minutes] = time.split(':').map(Number);
+
+  if (modifier === 'PM' && hours !== 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+};
+
+const getEndTime = (startTime: string) => {
+  const start = timeToMinutes(startTime);
+  const end = start + 60;
+
+  let hours = Math.floor(end / 60);
+  const minutes = end % 60;
+  const modifier = hours >= 12 ? 'PM' : 'AM';
+
+  if (hours > 12) hours -= 12;
+  if (hours === 0) hours = 12;
+
+  return `${hours}:${String(minutes).padStart(2, '0')} ${modifier}`;
+};
+
 export default function ClassesScreen() {
   const router = useRouter();
   const { bookings } = useBooking();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLevel, setSelectedLevel] = useState('All');
   const [classes, setClasses] = useState<any[]>([]);
-  const [coaches, setCoaches] = useState<any[]>([]);
+  const [selectedDay, setSelectedDay] = useState<string>('Monday');
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const levels = ['All', 'Beginner', 'Intermediate', 'Advanced'];
-
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchClasses = async () => {
       setIsLoading(true);
       setLoadError('');
 
-      const { data: classesData, error: classesError } = await supabase
+      const { data, error } = await supabase
         .from('classes')
-        .select('*');
+        .select('*')
+        .order('day_of_week', { ascending: true });
 
-      const { data: coachesData } = await supabase
-        .from('coaches')
-        .select('*');
-
-      if (classesError) {
-        console.error('CLASSES ERROR:', classesError);
-        setLoadError(classesError.message);
+      if (error) {
+        console.error('CLASSES ERROR:', error);
+        setLoadError(error.message);
         setClasses([]);
-      } else {
-        console.log('CLASSES DATA:', classesData);
-
-        const mappedClasses = (classesData ?? []).map((c: any) => ({
-          id: c.id,
-          name: c.name ?? '',
-          ageGroup: c.age_group ?? '',
-          level: c.level ?? '',
-          day: c.day ?? '',
-          time: c.time ?? '',
-          duration: c.duration ?? '',
-          coachId: c.coach_id ?? null,
-          capacity: c.capacity ?? 0,
-          enrolled: c.enrolled ?? 0,
-          description: c.description ?? '',
-          dayOfWeek: c.day_of_week ?? 0,
-        }));
-
-        setClasses(mappedClasses);
+        setIsLoading(false);
+        return;
       }
 
-      setCoaches(coachesData ?? []);
+      const mappedClasses = (data ?? []).map((c: any) => ({
+        id: c.id,
+        name: c.name ?? '',
+        ageGroup: c.age_group ?? '',
+        level: c.level ?? '',
+        day: c.day ?? '',
+        time: c.time ?? '',
+        duration: c.duration ?? '1 hour',
+        capacity: c.capacity ?? 0,
+        enrolled: c.enrolled ?? 0,
+        description: c.description ?? '',
+        dayOfWeek: c.day_of_week ?? 0,
+      }));
+
+      setClasses(mappedClasses);
+
+      const firstAvailableDay = orderedDays.find((day) =>
+        mappedClasses.some((cls) => cls.day === day)
+      );
+
+      if (firstAvailableDay) {
+        setSelectedDay(firstAvailableDay);
+      }
+
       setIsLoading(false);
     };
 
-    fetchData();
+    fetchClasses();
   }, []);
-
-  const filteredClasses = classes.filter((cls: any) => {
-    const name = cls.name || '';
-    const ageGroup = cls.ageGroup || '';
-    const level = cls.level || '';
-
-    const matchesSearch =
-      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ageGroup.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesLevel =
-      selectedLevel === 'All' ||
-      level.toLowerCase().includes(selectedLevel.toLowerCase());
-
-    return matchesSearch && matchesLevel;
-  });
-
-  const getCoachName = (coachId?: string | null) => {
-    if (!coachId) return 'No coach assigned';
-
-    const coach = coaches.find((c: any) => c.id === coachId);
-    return coach ? coach.name : 'No coach assigned';
-  };
 
   const getEnrolledCount = (classId: string) => {
     const classBookings = bookings.filter(
@@ -111,166 +132,178 @@ export default function ClassesScreen() {
     return uniqueStudents.size;
   };
 
-  const getAvailabilityColor = (enrolled: number, capacity: number) => {
-    const percentage = capacity > 0 ? (enrolled / capacity) * 100 : 0;
+  const groupedByDay = useMemo(() => {
+    return classes.reduce((acc: Record<string, any[]>, cls: any) => {
+      if (!acc[cls.day]) acc[cls.day] = [];
+      acc[cls.day].push(cls);
+      return acc;
+    }, {});
+  }, [classes]);
 
-    if (percentage >= 100) return Colors.error;
-    if (percentage >= 80) return Colors.warning;
+  const availableDays = orderedDays.filter((day) => groupedByDay[day]?.length);
 
-    return Colors.success;
+  const selectedDayClasses = useMemo(() => {
+    return [...(groupedByDay[selectedDay] ?? [])].sort(
+      (a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)
+    );
+  }, [groupedByDay, selectedDay]);
+
+  const getLevelStyle = (level: string) => {
+    if (level?.toLowerCase().includes('beginner')) return styles.beginnerBadge;
+    if (level?.toLowerCase().includes('advanced')) return styles.advancedBadge;
+    return styles.intermediateBadge;
+  };
+
+  const getLevelTextStyle = (level: string) => {
+    if (level?.toLowerCase().includes('beginner')) return styles.beginnerText;
+    if (level?.toLowerCase().includes('advanced')) return styles.advancedText;
+    return styles.intermediateText;
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.decorativeHeader}>
-        <View style={styles.headerCircle1} />
-        <View style={styles.headerTriangle} />
-      </View>
+      <View style={styles.hero}>
+        <View>
+          <View style={styles.heroPill}>
+            <Sparkles color={Colors.primary} size={15} />
+            <Text style={styles.heroPillText}>Choose your training day</Text>
+          </View>
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Search color={Colors.mediumGray} size={20} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search classes..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={Colors.mediumGray}
-          />
+          <Text style={styles.title}>Weekly Class Schedule</Text>
+          <Text style={styles.subtitle}>
+            Pick a day, choose your class time, then book your 4 sessions.
+          </Text>
         </View>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterContainer}
-        contentContainerStyle={styles.filterContent}
-      >
-        {levels.map((level) => (
-          <TouchableOpacity
-            key={level}
-            style={[
-              styles.filterChip,
-              selectedLevel === level && styles.filterChipActive,
-            ]}
-            onPress={() => setSelectedLevel(level)}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                selectedLevel === level && styles.filterChipTextActive,
-              ]}
+      {isLoading ? (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.centerText}>Loading schedule...</Text>
+        </View>
+      ) : loadError ? (
+        <View style={styles.centerState}>
+          <Text style={styles.errorText}>Error: {loadError}</Text>
+        </View>
+      ) : availableDays.length === 0 ? (
+        <View style={styles.centerState}>
+          <Text style={styles.centerText}>No classes available yet.</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.daysSection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.daysContent}
             >
-              {level}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+              {availableDays.map((day) => {
+                const isActive = selectedDay === day;
+                const count = groupedByDay[day]?.length ?? 0;
 
-      <ScrollView
-        style={styles.classList}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.classListContent}
-        bounces={false}
-      >
-        {isLoading ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>Loading classes...</Text>
-          </View>
-        ) : loadError ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>Error: {loadError}</Text>
-          </View>
-        ) : filteredClasses.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>
-              No classes found. Loaded: {classes.length}
-            </Text>
-          </View>
-        ) : (
-          filteredClasses.map((cls: any) => {
-            const enrolled = getEnrolledCount(cls.id);
-            const capacity = cls.capacity || 0;
-
-            return (
-              <TouchableOpacity
-                key={cls.id}
-                style={styles.classCard}
-                onPress={() =>
-                  router.push(`/(tabs)/classes/${cls.id}` as Href)
-                }
-                activeOpacity={0.7}
-              >
-                <View style={styles.cardShapes}>
-                  <View style={styles.cardCircle} />
-                  <View style={styles.cardGlow} />
-                </View>
-
-                <View style={styles.classHeader}>
-                  <View style={styles.classHeaderLeft}>
-                    <Text style={styles.className}>{cls.name}</Text>
-                    <Text style={styles.classAgeGroup}>{cls.ageGroup}</Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.levelBadge,
-                      cls.level === 'Beginner' && styles.levelBadgeBeginner,
-                      cls.level === 'Intermediate' && styles.levelBadgeIntermediate,
-                      cls.level === 'Advanced' && styles.levelBadgeAdvanced,
-                    ]}
+                return (
+                  <TouchableOpacity
+                    key={day}
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedDay(day)}
+                    style={[styles.dayCard, isActive && styles.dayCardActive]}
                   >
-                    <Text style={styles.levelBadgeText}>{cls.level}</Text>
-                  </View>
-                </View>
+                    <Text style={[styles.dayShort, isActive && styles.dayShortActive]}>
+                      {dayShort[day]}
+                    </Text>
+                    <Text style={[styles.dayFull, isActive && styles.dayFullActive]}>
+                      {day}
+                    </Text>
+                    <Text style={[styles.dayCount, isActive && styles.dayCountActive]}>
+                      {count} classes
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
 
-                <Text style={styles.classDescription} numberOfLines={2}>
-                  {cls.description}
+          <ScrollView
+            style={styles.scheduleList}
+            contentContainerStyle={styles.scheduleContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.selectedHeader}>
+              <CalendarDays color={Colors.primary} size={22} />
+              <View>
+                <Text style={styles.selectedTitle}>{selectedDay}</Text>
+                <Text style={styles.selectedSubtitle}>
+                  {selectedDayClasses.length} available class times
                 </Text>
+              </View>
+            </View>
 
-                <View style={styles.classDetails}>
-                  <View style={styles.classDetailItem}>
-                    <Clock color={Colors.mediumGray} size={16} />
-                    <Text style={styles.classDetailText}>
-                      {cls.day}, {cls.time} ({cls.duration})
-                    </Text>
+            {selectedDayClasses.map((cls: any) => {
+              const enrolled = getEnrolledCount(cls.id);
+              const capacity = cls.capacity || 12;
+              const isFull = capacity > 0 && enrolled >= capacity;
+              const endTime = getEndTime(cls.time);
+
+              return (
+                <TouchableOpacity
+                  key={cls.id}
+                  activeOpacity={0.86}
+                  disabled={isFull}
+                  style={[styles.classCard, isFull && styles.classCardFull]}
+                  onPress={() => router.push(`/(tabs)/classes/${cls.id}` as Href)}
+                >
+                  <View style={styles.timeRail}>
+                    <Text style={styles.startTime}>{cls.time}</Text>
+                    <View style={styles.timeLine} />
+                    <Text style={styles.endTime}>{endTime}</Text>
                   </View>
 
-                  <View style={styles.classDetailItem}>
-                    <UsersIcon color={Colors.mediumGray} size={16} />
-                    <Text style={styles.classDetailText}>
-                      Coach: {getCoachName(cls.coachId)}
+                  <View style={styles.classMain}>
+                    <View style={styles.classTopRow}>
+                      <View style={styles.classTitleWrap}>
+                        <Text style={styles.className}>{cls.name}</Text>
+                        <Text style={styles.classMeta}>{cls.ageGroup || 'Kids'}</Text>
+                      </View>
+
+                      <View style={[styles.levelBadge, getLevelStyle(cls.level)]}>
+                        <Text style={[styles.levelText, getLevelTextStyle(cls.level)]}>
+                          {cls.level || 'Class'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.classDescription} numberOfLines={2}>
+                      {cls.description || 'Gymnastics training class.'}
                     </Text>
+
+                    <View style={styles.classBottomRow}>
+                      <View style={styles.infoChip}>
+                        <Clock color={Colors.mediumGray} size={15} />
+                        <Text style={styles.infoChipText}>{cls.duration || '1 hour'}</Text>
+                      </View>
+
+                      <View style={styles.infoChip}>
+                        <UsersIcon color={Colors.mediumGray} size={15} />
+                        <Text style={styles.infoChipText}>
+                          {enrolled}/{capacity} booked
+                        </Text>
+                      </View>
+
+                      <View style={[styles.statusPill, isFull && styles.statusPillFull]}>
+                        <Text style={[styles.statusText, isFull && styles.statusTextFull]}>
+                          {isFull ? 'Full' : 'Available'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
 
-                <View style={styles.classFooter}>
-                  <View style={styles.availabilityContainer}>
-                    <View
-                      style={[
-                        styles.availabilityDot,
-                        {
-                          backgroundColor: getAvailabilityColor(
-                            enrolled,
-                            capacity
-                          ),
-                        },
-                      ]}
-                    />
-
-                    <Text style={styles.availabilityText}>
-                      {enrolled}/{capacity} enrolled
-                      {capacity > 0 && enrolled >= capacity ? ' (Full)' : ''}
-                    </Text>
-                  </View>
-
-                  <ChevronRight color={Colors.primary} size={20} />
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </ScrollView>
+                  <ChevronRight color={isFull ? Colors.mediumGray : Colors.primary} size={22} />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </>
+      )}
     </View>
   );
 }
@@ -278,237 +311,321 @@ export default function ClassesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
-    position: 'relative' as const,
+    backgroundColor: '#F4F7FB',
   },
-  decorativeHeader: {
-    position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-    zIndex: 0,
-  },
-  headerCircle1: {
-    position: 'absolute' as const,
-    top: -50,
-    right: -30,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 107, 157, 0.08)',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 107, 157, 0.15)',
-    shadowColor: '#FF6B9D',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-  },
-  headerTriangle: {
-    position: 'absolute' as const,
-    top: 20,
-    left: -50,
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid' as const,
-    borderLeftWidth: 50,
-    borderRightWidth: 50,
-    borderBottomWidth: 85,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: 'rgba(157, 78, 221, 0.1)',
-    transform: [{ rotate: '25deg' }],
-  },
-  searchContainer: {
-    padding: 16,
+
+  hero: {
     backgroundColor: Colors.white,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  searchInputContainer: {
+
+  heroPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 16,
-    color: Colors.text,
-  },
-  filterContainer: {
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    maxHeight: 60,
-  },
-  filterContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.lightGray,
-    marginRight: 8,
-    flexShrink: 0,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.text,
-  },
-  filterChipTextActive: {
-    color: Colors.white,
-  },
-  classList: {
-    flex: 1,
-  },
-  classListContent: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  emptyState: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: Colors.textLight,
-    textAlign: 'center',
-  },
-  classCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    overflow: 'hidden' as const,
-    position: 'relative' as const,
-  },
-  cardShapes: {
-    position: 'absolute' as const,
-    top: 0,
-    right: 0,
-  },
-  cardCircle: {
-    position: 'absolute' as const,
-    top: -25,
-    right: -25,
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255, 165, 0, 0.06)',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 165, 0, 0.12)',
-  },
-  cardGlow: {
-    position: 'absolute' as const,
-    top: 5,
-    right: 5,
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    backgroundColor: 'rgba(43, 127, 191, 0.12)',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-  },
-  classHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  classHeaderLeft: {
-    flex: 1,
-  },
-  className: {
-    fontSize: 18,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  classAgeGroup: {
-    fontSize: 14,
-    color: Colors.textLight,
-  },
-  levelBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
     alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: '#EAF4FF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginBottom: 12,
   },
-  levelBadgeBeginner: {
-    backgroundColor: '#e3f2fd',
-  },
-  levelBadgeIntermediate: {
-    backgroundColor: '#fff3e0',
-  },
-  levelBadgeAdvanced: {
-    backgroundColor: '#fce4ec',
-  },
-  levelBadgeText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
+
+  heroPillText: {
     color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
-  classDescription: {
+
+  title: {
+    fontSize: 25,
+    fontWeight: '900',
+    color: Colors.text,
+    marginBottom: 6,
+  },
+
+  subtitle: {
     fontSize: 14,
     color: Colors.textLight,
     lineHeight: 20,
-    marginBottom: 12,
   },
-  classDetails: {
-    gap: 8,
-    marginBottom: 12,
+
+  daysSection: {
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
-  classDetailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+
+  daysContent: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 10,
   },
-  classDetailText: {
-    fontSize: 14,
-    color: Colors.text,
+
+  dayCard: {
+    width: 122,
+    paddingVertical: 14,
+    paddingHorizontal: 13,
+    borderRadius: 18,
+    backgroundColor: '#F2F4F7',
+    borderWidth: 1,
+    borderColor: '#E3E8EF',
   },
-  classFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+
+  dayCardActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  availabilityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  availabilityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  availabilityText: {
+
+  dayShort: {
     fontSize: 13,
     color: Colors.textLight,
-    fontWeight: '500' as const,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+
+  dayShortActive: {
+    color: '#DCEEFF',
+  },
+
+  dayFull: {
+    fontSize: 17,
+    color: Colors.text,
+    fontWeight: '900',
+  },
+
+  dayFullActive: {
+    color: Colors.white,
+  },
+
+  dayCount: {
+    marginTop: 5,
+    color: Colors.textLight,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  dayCountActive: {
+    color: '#EAF4FF',
+  },
+
+  scheduleList: {
+    flex: 1,
+  },
+
+  scheduleContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+
+  selectedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  selectedTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: Colors.text,
+  },
+
+  selectedSubtitle: {
+    fontSize: 13,
+    color: Colors.textLight,
+    marginTop: 1,
+  },
+
+  classCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E6EBF2',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+
+  classCardFull: {
+    opacity: 0.55,
+  },
+
+  timeRail: {
+    width: 78,
+    alignItems: 'center',
+  },
+
+  startTime: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: Colors.primary,
+    textAlign: 'center',
+  },
+
+  timeLine: {
+    width: 2,
+    height: 34,
+    backgroundColor: '#D7E7F8',
+    marginVertical: 6,
+    borderRadius: 2,
+  },
+
+  endTime: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  classMain: {
+    flex: 1,
+  },
+
+  classTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+
+  classTitleWrap: {
+    flex: 1,
+  },
+
+  className: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: Colors.text,
+    marginBottom: 3,
+  },
+
+  classMeta: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontWeight: '600',
+  },
+
+  classDescription: {
+    marginTop: 8,
+    fontSize: 13,
+    color: Colors.textLight,
+    lineHeight: 18,
+  },
+
+  levelBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+
+  beginnerBadge: {
+    backgroundColor: '#E3F2FD',
+  },
+
+  intermediateBadge: {
+    backgroundColor: '#FFF3E0',
+  },
+
+  advancedBadge: {
+    backgroundColor: '#FCE4EC',
+  },
+
+  levelText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  beginnerText: {
+    color: '#1976D2',
+  },
+
+  intermediateText: {
+    color: '#F57C00',
+  },
+
+  advancedText: {
+    color: '#C2185B',
+  },
+
+  classBottomRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+
+  infoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F5F7FA',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+
+  infoChipText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontWeight: '700',
+  },
+
+  statusPill: {
+    backgroundColor: '#E8F8EF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+
+  statusPillFull: {
+    backgroundColor: '#FDECEC',
+  },
+
+  statusText: {
+    color: '#16A34A',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  statusTextFull: {
+    color: '#DC2626',
+  },
+
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 30,
+  },
+
+  centerText: {
+    marginTop: 12,
+    fontSize: 15,
+    color: Colors.textLight,
+    textAlign: 'center',
+  },
+
+  errorText: {
+    fontSize: 15,
+    color: Colors.error,
+    textAlign: 'center',
   },
 });
