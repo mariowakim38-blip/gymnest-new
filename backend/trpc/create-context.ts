@@ -4,13 +4,13 @@ import superjson from "superjson";
 import { getServerSupabaseClient } from "./utils/server-client";
 
 export const createContext = async (opts: FetchCreateContextFnOptions) => {
-  const authHeader = opts.req.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '')?.trim() || null;
+  const authHeader = opts.req.headers.get("authorization");
+  const token = authHeader?.replace("Bearer ", "")?.trim() || null;
 
   return {
     req: opts.req,
-    supabase: getServerSupabaseClient(),
     token,
+    supabase: getServerSupabaseClient(token),
   };
 };
 
