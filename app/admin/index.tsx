@@ -19,6 +19,11 @@ import { classes, Class } from '@/constants/mockData';
 import { Database } from '@/lib/database.types';
 import { supabase } from '@/lib/supabase';
 
+const safeDate = (date: string) => {
+  if (!date) return new Date();
+  return new Date(`${date}T12:00:00`);
+};
+
 type TabType = 'users' | 'bookings' | 'attendance' | 'announcements' | 'gallery' | 'coaches' | 'classes' | 'events';
 
 export default function AdminPanel() {
@@ -531,7 +536,7 @@ export default function AdminPanel() {
   const getClassDates = (classId: string) => {
     const classBookings = bookings.filter(b => b.classId === classId && b.status !== 'cancelled');
     const uniqueDates = Array.from(new Set(classBookings.map(b => b.classDate)));
-    return uniqueDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    return uniqueDates.sort((a, b) => safeDate(String(a)).getTime() - safeDate(String(b)).getTime());
   };
 
   const filterClassesByDate = () => {
@@ -540,7 +545,7 @@ export default function AdminPanel() {
     return (sourceClasses as any[]).filter((cls: any) => {
       const classDates = getClassDates(cls.id);
       return classDates.some((date: string) => {
-        const dateObj = new Date(date);
+        const dateObj = safeDate(date);
         const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         return formattedDate.toLowerCase().includes(searchDate.toLowerCase()) || date.includes(searchDate);
       });
@@ -864,9 +869,9 @@ export default function AdminPanel() {
 
                   <View style={styles.scheduleBox}>
                     {group.dates
-                      .sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())
+                      .sort((a: string, b: string) => safeDate(a).getTime() - safeDate(b).getTime())
                       .map((date: string) => {
-                        const d = new Date(date);
+                        const d = safeDate(date);
                         const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
                         const formatted = d.toLocaleDateString('en-US', {
                           month: 'short',
@@ -918,7 +923,7 @@ export default function AdminPanel() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {getClassDates(selectedClassId).map((date: string) => (
                     <TouchableOpacity key={date} style={[styles.dateChip, selectedClassDate === date && styles.dateChipActive]} onPress={() => setSelectedClassDate(date)}>
-                      <Text style={[styles.dateChipText, selectedClassDate === date && styles.dateChipTextActive]}>{new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+                      <Text style={[styles.dateChipText, selectedClassDate === date && styles.dateChipTextActive]}>{safeDate(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
