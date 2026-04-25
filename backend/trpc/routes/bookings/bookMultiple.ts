@@ -5,16 +5,20 @@ import { Database } from '../../../../lib/database.types';
 type BookingInsert = Database['public']['Tables']['bookings']['Insert'];
 
 export const bookMultipleDatesProcedure = protectedProcedure
-  .input(z.object({
-    classId: z.string(),
-    studentId: z.string(),
-    dates: z.array(z.string()),
-  }))
+  .input(
+    z.object({
+      classId: z.string(),
+      studentId: z.string(),
+      dates: z.array(z.string()),
+    })
+  )
   .mutation(async ({ input, ctx }) => {
-    const [profileId, childId] = input.studentId.split('-');
+    const [profileId, childId] = input.studentId.split('::');
+
     if (!profileId || !childId) {
-      throw new Error('Invalid studentId format. Expected format: profileId-childId');
+      throw new Error('Invalid studentId format. Expected format: profileId::childId');
     }
+
     if (ctx.profile?.role !== 'admin' && ctx.profile?.id !== profileId) {
       throw new Error('You can only create bookings for your own children');
     }
@@ -27,7 +31,17 @@ export const bookMultipleDatesProcedure = protectedProcedure
       status: 'confirmed',
     }));
 
-    const { data, error } = await ctx.supabase.from('bookings').insert(bookingsToInsert).select();
-    if (error || !data) throw new Error(error?.message || 'Failed to create bookings');
-    return { success: true, bookings: data };
+    const { data, error } = await ctx.supabase
+      .from('bookings')
+      .insert(bookingsToInsert)
+      .select();
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create bookings');
+    }
+
+    return {
+      success: true,
+      bookings: data,
+    };
   });
