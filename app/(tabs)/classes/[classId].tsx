@@ -8,10 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Href } from 'expo-router';
-import {
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -129,8 +126,27 @@ export default function ClassDetailScreen() {
     return date >= today && date.getDay() === classData.dayOfWeek;
   };
 
+  const getNext4Dates = () => {
+    if (!classData) return [];
+
+    const dates: string[] = [];
+    const d = selectedDate ? new Date(selectedDate) : new Date(today);
+
+    while (dates.length < 4) {
+      if (d >= today && d.getDay() === classData.dayOfWeek) {
+        dates.push(formatDateString(d));
+      }
+
+      d.setDate(d.getDate() + 1);
+    }
+
+    return dates;
+  };
+
+  const selectedDates = getNext4Dates();
+
   const isDateSelected = (date: Date) => {
-    return selectedDate === formatDateString(date);
+    return selectedDates.includes(formatDateString(date));
   };
 
   const goToPreviousMonth = () => {
@@ -148,23 +164,6 @@ export default function ClassDetailScreen() {
   const handleSelectDate = (date: Date) => {
     if (!isDateAvailable(date)) return;
     setSelectedDate(formatDateString(date));
-  };
-
-  const getNext4Dates = () => {
-    if (!classData) return [];
-
-    const dates: string[] = [];
-    const d = selectedDate ? new Date(selectedDate) : new Date(today);
-
-    while (dates.length < 4) {
-      if (d >= today && d.getDay() === classData.dayOfWeek) {
-        dates.push(formatDateString(d));
-      }
-
-      d.setDate(d.getDate() + 1);
-    }
-
-    return dates;
   };
 
   if (loading) {
@@ -202,7 +201,7 @@ export default function ClassDetailScreen() {
       return;
     }
 
-    const studentId = `${user.id}-${student.id}`;
+    const studentId = `${user.id}::${student.id}`;
     const dates = getNext4Dates();
 
     if (dates.length === 0) {
@@ -261,6 +260,10 @@ export default function ClassDetailScreen() {
           </TouchableOpacity>
         </View>
 
+        <Text style={styles.helperText}>
+          Select a start date. The app will book the next 4 sessions.
+        </Text>
+
         <View style={styles.calendarGrid}>
           {dayNames.map((d) => (
             <Text key={d} style={styles.dayNameText}>
@@ -268,28 +271,44 @@ export default function ClassDetailScreen() {
             </Text>
           ))}
 
-          {calendarDates.map((date, i) => (
-            <TouchableOpacity
-              key={i}
-              onPress={() => handleSelectDate(date)}
-              disabled={!isDateAvailable(date)}
-              style={[
-                styles.dateCell,
-                !isDateAvailable(date) && styles.dateCellDisabled,
-                isDateSelected(date) && styles.dateCellSelected,
-              ]}
-            >
-              <Text
+          {calendarDates.map((date, i) => {
+            const selected = isDateSelected(date);
+            const available = isDateAvailable(date);
+
+            return (
+              <TouchableOpacity
+                key={i}
+                onPress={() => handleSelectDate(date)}
+                disabled={!available}
                 style={[
-                  styles.dateText,
-                  isDateSelected(date) && styles.dateTextSelected,
+                  styles.dateCell,
+                  !available && styles.dateCellDisabled,
+                  selected && styles.dateCellSelected,
                 ]}
               >
-                {date.getDate()}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.dateText,
+                    selected && styles.dateTextSelected,
+                  ]}
+                >
+                  {date.getDate()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {selectedDates.length > 0 && (
+          <View style={styles.selectedDatesBox}>
+            <Text style={styles.selectedDatesTitle}>Selected 4 sessions:</Text>
+            {selectedDates.map((date) => (
+              <Text key={date} style={styles.selectedDateText}>
+                {date}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
 
       <TouchableOpacity
@@ -317,6 +336,7 @@ const styles = StyleSheet.create({
   levelBadgeIntermediate: { backgroundColor: '#fff3e0' },
   levelBadgeAdvanced: { backgroundColor: '#fce4ec' },
   levelBadgeText: { color: '#000', fontWeight: 'bold' },
+
   calendarSection: { padding: 16 },
   calendarHeader: {
     flexDirection: 'row',
@@ -324,6 +344,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   monthTitle: { fontSize: 18, fontWeight: 'bold' },
+  helperText: {
+    textAlign: 'center',
+    marginTop: 12,
+    color: '#666',
+  },
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 16 },
   dayNameText: {
     width: '14.28%',
@@ -350,6 +375,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+
+  selectedDatesBox: {
+    marginTop: 20,
+    padding: 12,
+    backgroundColor: '#f2f2f2',
+    borderRadius: 10,
+  },
+  selectedDatesTitle: {
+    fontWeight: 'bold',
+    marginBottom: 6,
+  },
+  selectedDateText: {
+    color: '#333',
+    marginTop: 2,
+  },
+
   bookButton: {
     padding: 16,
     backgroundColor: 'gold',
