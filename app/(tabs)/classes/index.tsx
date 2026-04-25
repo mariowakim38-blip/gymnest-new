@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
-import { Sparkles, CalendarDays, ArrowRight, CheckCircle2 } from 'lucide-react-native';
+import { CalendarDays, ChevronRight, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 export default function ClassesScreen() {
@@ -20,51 +20,36 @@ export default function ClassesScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
-        <View style={styles.pill}>
+        <View style={styles.heroPill}>
           <Sparkles color={Colors.primary} size={15} />
-          <Text style={styles.pillText}>Monthly Training Plans</Text>
+          <Text style={styles.heroPillText}>Monthly Training Plans</Text>
         </View>
 
-        <Text style={styles.title}>Build your child’s gymnastics schedule</Text>
-        <Text style={styles.subtitle}>
+        <Text style={styles.heroTitle}>Build your child’s gymnastics schedule</Text>
+        <Text style={styles.heroSubtitle}>
           Choose a monthly package, select weekly training hours, then pick the start date.
         </Text>
 
-        <TouchableOpacity style={styles.mainButton} onPress={openMonthlyBuilder} activeOpacity={0.88}>
+        <TouchableOpacity
+          style={styles.bookButton}
+          onPress={openMonthlyBuilder}
+          activeOpacity={0.88}
+        >
           <View>
-            <Text style={styles.mainButtonText}>Book a Class</Text>
-            <Text style={styles.mainButtonSubtext}>Package • Weekly schedule • Start date</Text>
+            <Text style={styles.bookButtonTitle}>Book a Class</Text>
+            <Text style={styles.bookButtonSubtitle}>Package • Weekly schedule • Start date</Text>
           </View>
-          <ArrowRight color={Colors.white} size={23} />
+          <ChevronRight color={Colors.white} size={28} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.infoCard}>
         <CalendarDays color={Colors.primary} size={24} />
-        <View style={styles.infoTextWrap}>
+        <View style={styles.infoTextBox}>
           <Text style={styles.infoTitle}>How booking works</Text>
           <Text style={styles.infoText}>
-            You will choose monthly hours first, then select the exact days and times your child will attend every week.
+            Choose monthly hours first, then select the exact days and times your child will attend every week.
           </Text>
-        </View>
-      </View>
-
-      <View style={styles.rulesCard}>
-        <Text style={styles.rulesTitle}>Important class rules</Text>
-
-        <View style={styles.ruleRow}>
-          <CheckCircle2 color={Colors.success} size={18} />
-          <Text style={styles.ruleText}>Beginner class is 1 hour per day only.</Text>
-        </View>
-
-        <View style={styles.ruleRow}>
-          <CheckCircle2 color={Colors.success} size={18} />
-          <Text style={styles.ruleText}>Intermediate/Advanced can book multiple hours in the same day.</Text>
-        </View>
-
-        <View style={styles.ruleRow}>
-          <CheckCircle2 color={Colors.success} size={18} />
-          <Text style={styles.ruleText}>Calendar start date will only allow the days you selected.</Text>
         </View>
       </View>
     </ScrollView>
@@ -78,123 +63,96 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 18,
-    paddingBottom: 36,
+    paddingBottom: 40,
   },
   heroCard: {
     backgroundColor: Colors.white,
-    borderRadius: 28,
-    padding: 22,
+    borderRadius: 26,
+    padding: 24,
     borderWidth: 1,
-    borderColor: '#E5EAF1',
+    borderColor: '#E2E8F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
     shadowRadius: 18,
     elevation: 4,
+    marginBottom: 18,
   },
-  pill: {
+  heroPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 7,
+    gap: 6,
     backgroundColor: '#EAF4FF',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    marginBottom: 16,
+    marginBottom: 18,
   },
-  pillText: {
+  heroPillText: {
     color: Colors.primary,
     fontSize: 13,
     fontWeight: '800',
   },
-  title: {
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '900',
+  heroTitle: {
     color: Colors.text,
+    fontSize: 27,
+    fontWeight: '900',
     marginBottom: 10,
   },
-  subtitle: {
+  heroSubtitle: {
+    color: Colors.textLight,
     fontSize: 15,
     lineHeight: 22,
-    color: Colors.textLight,
-    marginBottom: 20,
+    marginBottom: 22,
   },
-  mainButton: {
+  bookButton: {
     backgroundColor: Colors.primary,
     borderRadius: 20,
-    paddingVertical: 17,
-    paddingHorizontal: 18,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.28,
     shadowRadius: 14,
     elevation: 5,
   },
-  mainButtonText: {
+  bookButtonTitle: {
     color: Colors.white,
-    fontSize: 19,
+    fontSize: 20,
     fontWeight: '900',
   },
-  mainButtonSubtext: {
+  bookButtonSubtitle: {
     color: '#EAF4FF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 4,
   },
   infoCard: {
     backgroundColor: Colors.white,
     borderRadius: 22,
-    padding: 16,
-    marginTop: 16,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#E5EAF1',
+    borderColor: '#E2E8F0',
     flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 12,
   },
-  infoTextWrap: {
+  infoTextBox: {
     flex: 1,
   },
   infoTitle: {
     color: Colors.text,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   infoText: {
     color: Colors.textLight,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  rulesCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 22,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: '#E5EAF1',
-  },
-  rulesTitle: {
-    color: Colors.text,
-    fontSize: 17,
-    fontWeight: '900',
-    marginBottom: 12,
-  },
-  ruleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    marginBottom: 10,
-  },
-  ruleText: {
-    flex: 1,
-    color: Colors.text,
     fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 19,
+    lineHeight: 20,
   },
 });
