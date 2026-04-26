@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   CalendarDays,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 
 export default function EventsScreen() {
   const { data: dbEvents = [] } = trpc.events.getAll.useQuery();
