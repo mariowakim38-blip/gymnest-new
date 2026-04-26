@@ -726,9 +726,36 @@ export default function AdminPanel() {
     }
   };
 
+  const getDayOfWeekNumber = (day: string) => {
+    const dayMap: Record<string, number> = {
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
+    };
+
+    return dayMap[String(day || '').trim().toLowerCase()] ?? 1;
+  };
+
   const handleAddClass = () => {
+    const defaultDay = selectedClassesDay || 'Monday';
     setEditingClass(null);
-    setClassForm({ name: 'Gymnastics Class', ageGroup: '', level: 'Beginner', day: '', time: '', duration: '60 min', coachId: '', capacity: 30, enrolled: 0, description: '', dayOfWeek: 1 });
+    setClassForm({
+      name: 'Gymnastics Class',
+      ageGroup: '',
+      level: 'Beginner',
+      day: defaultDay,
+      time: '',
+      duration: '60 min',
+      coachId: '',
+      capacity: 30,
+      enrolled: 0,
+      description: '',
+      dayOfWeek: getDayOfWeekNumber(defaultDay),
+    });
     setShowClassModal(true);
   };
 
@@ -736,7 +763,8 @@ export default function AdminPanel() {
     setEditingClass(item);
     const ageGroup = 'age_group' in item ? item.age_group : item.ageGroup;
     const coachId = 'coach_id' in item ? item.coach_id : item.coachId;
-    const dayOfWeek = 'day_of_week' in item ? item.day_of_week : item.dayOfWeek;
+    const rawDayOfWeek = 'day_of_week' in item ? item.day_of_week : item.dayOfWeek;
+    const dayOfWeek = Number.isFinite(Number(rawDayOfWeek)) ? Number(rawDayOfWeek) : getDayOfWeekNumber(item.day);
     setClassForm({ name: item.name, ageGroup, level: item.level, day: item.day, time: item.time, duration: item.duration, coachId, capacity: item.capacity, enrolled: item.enrolled, description: item.description, dayOfWeek });
     setShowClassModal(true);
   };
@@ -769,7 +797,7 @@ export default function AdminPanel() {
         capacity: Number(classForm.capacity) || 30,
         enrolled: Number(classForm.enrolled) || 0,
         description: cleanDescription || null,
-        day_of_week: Number(classForm.dayOfWeek) || 1,
+        day_of_week: getDayOfWeekNumber(cleanDay),
       };
 
       if (editingClass) {
@@ -1985,9 +2013,26 @@ export default function AdminPanel() {
                 ))}
               </View>
               <Text style={styles.label}>Day</Text>
-              <TextInput style={styles.input} value={classForm.day} onChangeText={(text) => setClassForm({ ...classForm, day: text })} placeholder="e.g., Monday" />
-              <Text style={styles.label}>Day of Week (0=Sunday, 1=Monday, etc.)</Text>
-              <TextInput style={styles.input} value={String(classForm.dayOfWeek)} onChangeText={(text) => setClassForm({ ...classForm, dayOfWeek: parseInt(text) || 1 })} keyboardType="numeric" />
+              <View style={styles.typeButtons}>
+                {(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const).map((day) => (
+                  <TouchableOpacity
+                    key={day}
+                    style={[styles.typeButton, classForm.day === day && styles.typeButtonActive]}
+                    onPress={() =>
+                      setClassForm({
+                        ...classForm,
+                        day,
+                        dayOfWeek: getDayOfWeekNumber(day),
+                      })
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.typeButtonText, classForm.day === day && styles.typeButtonTextActive]}>
+                      {day}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <Text style={styles.label}>Time</Text>
               <TextInput style={styles.input} value={classForm.time} onChangeText={(text) => setClassForm({ ...classForm, time: text })} placeholder="e.g., 4:30 PM" />
               <Text style={styles.label}>Duration</Text>
