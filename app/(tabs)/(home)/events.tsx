@@ -17,11 +17,39 @@ import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
 
 export default function EventsScreen() {
-  const { data: dbEvents = [] } = trpc.events.getAll.useQuery();
-  const { data: dbAnnouncements = [] } = trpc.announcements.getAll.useQuery();
+  const [allEvents, setAllEvents] = useState<any[]>([]);
+  const [allAnnouncements, setAllAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const allEvents = dbEvents;
-  const allAnnouncements = dbAnnouncements;
+  const fetchData = async () => {
+    setLoading(true);
+
+    const { data: eventsData, error: eventsError } = await supabase
+      .from('events')
+      .select('*')
+      .order('date', { ascending: true });
+
+    const { data: announcementsData, error: announcementsError } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (eventsError) {
+      console.error('Events fetch error:', eventsError.message);
+    }
+
+    if (announcementsError) {
+      console.error('Announcements fetch error:', announcementsError.message);
+    }
+
+    setAllEvents(eventsData || []);
+    setAllAnnouncements(announcementsData || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const getEventTypeColor = (type: string) => {
     switch (type) {
@@ -51,9 +79,48 @@ export default function EventsScreen() {
     }
   };
 
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'No date';
+
+    const date = new Date(`${dateString}T12:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+
+    return date.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatShortDate = (dateString: string) => {
+    if (!dateString) return '';
+
+    const date = new Date(`${dateString}T12:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
   const getImageUrl = (event: any) => {
     return event.image_url || event.imageUrl || '';
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading events...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -110,23 +177,21 @@ export default function EventsScreen() {
                     <View style={styles.eventDetailItem}>
                       <Calendar color={Colors.mediumGray} size={16} />
                       <Text style={styles.eventDetailText}>
-                        {new Date(event.date).toLocaleDateString('en-US', {
-                          month: 'long',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
+                        {formatDate(event.date)}
                       </Text>
                     </View>
 
                     <View style={styles.eventDetailItem}>
                       <Clock color={Colors.mediumGray} size={16} />
-                      <Text style={styles.eventDetailText}>{event.time}</Text>
+                      <Text style={styles.eventDetailText}>
+                        {event.time || 'No time'}
+                      </Text>
                     </View>
 
                     <View style={styles.eventDetailItem}>
                       <MapPin color={Colors.mediumGray} size={16} />
                       <Text style={styles.eventDetailText}>
-                        {event.location}
+                        {event.location || 'No location'}
                       </Text>
                     </View>
                   </View>
@@ -168,10 +233,7 @@ export default function EventsScreen() {
                 </View>
 
                 <Text style={styles.announcementDate}>
-                  {new Date(announcement.date).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {formatShortDate(announcement.date)}
                 </Text>
               </View>
 
@@ -191,6 +253,17 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#F4F7FB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: 15,
+    color: '#64748B',
+    fontWeight: '700',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F4F7FB',
