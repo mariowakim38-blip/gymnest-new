@@ -67,6 +67,8 @@ export default function AdminPanel() {
   const [selectedAttendanceWeekDay, setSelectedAttendanceWeekDay] = useState<string | null>(null);
   const [selectedAttendanceClassForDay, setSelectedAttendanceClassForDay] = useState<any | null>(null);
   const [attendanceSearch, setAttendanceSearch] = useState<string>('');
+  const [selectedAttendanceCalendarDate, setSelectedAttendanceCalendarDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedAttendanceClassForDate, setSelectedAttendanceClassForDate] = useState<any | null>(null);
 
   const [selectedClassesDay, setSelectedClassesDay] = useState<string | null>(null);
   const isAdmin = user?.role === 'admin';
@@ -972,6 +974,61 @@ export default function AdminPanel() {
         )
       : [];
 
+
+  const getAllClassesSource = () => (dbClasses.length > 0 ? dbClasses : classes) as any[];
+
+  const getBookingParent = (booking: any) => {
+    return allUsers.find((u: any) =>
+      String(u.id) === String(booking.profileId) ||
+      String(u.userId) === String(booking.profileId)
+    );
+  };
+
+  const getBookingChild = (booking: any) => {
+    const parent = getBookingParent(booking);
+    return parent?.children?.find((child: any) => String(child.id) === String(booking.childId));
+  };
+
+  const getUniqueStudentCount = (bookingList: any[]) => {
+    return new Set(
+      bookingList.map((booking: any) => String(booking.profileId) + '::' + String(booking.childId))
+    ).size;
+  };
+
+  const getClassesForDay = (day: string) => {
+    const sourceClasses = getAllClassesSource()
+      .filter((cls: any) => String(cls.day || '').toLowerCase() === day.toLowerCase())
+      .sort((a: any, b: any) => String(a.time || '').localeCompare(String(b.time || '')));
+
+    const classesFromBookings = bookings
+      .filter((booking: any) =>
+        booking.status !== 'cancelled' &&
+        String(booking.classDay || '').toLowerCase() === day.toLowerCase()
+      )
+      .map((booking: any) => ({
+        id: booking.classId,
+        name: booking.className?.split(' - ')[0] || 'Class',
+        age_group: booking.className?.split(' - ').slice(1).join(' - ') || '',
+        day: booking.classDay,
+        time: booking.classTime,
+        duration: booking.classDuration,
+      }));
+
+    const merged: any[] = [];
+    [...sourceClasses, ...classesFromBookings].forEach((cls: any) => {
+      if (!merged.some((item: any) => String(item.id) === String(cls.id))) merged.push(cls);
+    });
+
+    return merged.sort((a: any, b: any) => String(a.time || '').localeCompare(String(b.time || '')));
+  };
+
+  const getWeekdayFromDate = (dateString: string) => {
+    if (!dateString) return '';
+    return safeDate(dateString).toLocaleDateString('en-US', { weekday: 'long' });
+  };
+
+  const selectedAttendanceDateDayName = getWeekdayFromDate(selectedAttendanceCalendarDate);
+
   if (user?.role !== 'admin') return null;
 
   return (
@@ -1304,8 +1361,6 @@ export default function AdminPanel() {
 
             {bookingsLoading ? (
               <Text style={styles.emptyStateText}>Loading bookings...</Text>
-            ) : bookings.length === 0 ? (
-              <Text style={styles.emptyStateText}>No bookings found.</Text>
             ) : !selectedBookingDay ? (
               <View>
                 <Text style={styles.attendanceStepTitle}>Select a day</Text>
@@ -1314,9 +1369,10 @@ export default function AdminPanel() {
                     const dayBookings = bookings.filter(
                       (booking: any) =>
                         booking.status !== 'cancelled' &&
-                        String(booking.classDay).toLowerCase() === day.toLowerCase()
+                        String(booking.classDay || '').toLowerCase() === day.toLowerCase()
                     );
-                    const uniqueClassIds = Array.from(new Set(dayBookings.map((b: any) => b.classId)));
+                    const scheduledClassCount = getClassesForDay(day).length;
+                    const uniqueStudentCount = getUniqueStudentCount(dayBookings);
 
                     return (
                       <TouchableOpacity
@@ -1329,7 +1385,7 @@ export default function AdminPanel() {
                         activeOpacity={0.85}
                       >
                         <Text style={styles.attendanceDayTitle}>{day}</Text>
-                        <Text style={styles.attendanceDayCount}>{uniqueClassIds.length} classes • {dayBookings.length} students</Text>
+                        <Text style={styles.attendanceDayCount}>{scheduledClassCount} classes • {uniqueStudentCount} students</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1351,30 +1407,32 @@ export default function AdminPanel() {
                 <Text style={styles.attendanceStepTitle}>{selectedBookingDay} Classes</Text>
 
                 <View style={styles.attendanceClassGrid}>
-                  {(dbClasses.length > 0 ? dbClasses : classes)
-                    .filter((cls: any) => String(cls.day).toLowerCase() === selectedBookingDay.toLowerCase())
-                    .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
-                    .map((cls: any) => {
-                      const classBookings = bookings.filter(
-                        (booking: any) =>
-                          booking.status !== 'cancelled' &&
-                          String(booking.classId) === String(cls.id)
-                      );
+                  {getClassesForDay(selectedBookingDay).map((cls: any) => {
+                    const classBookings = bookings.filter(
+                      (booking: any) =>
+                        booking.status !== 'cancelled' &&
+                        String(booking.classId) === String(cls.id)
+                    );
+                    const uniqueStudentCount = getUniqueStudentCount(classBookings);
 
-                      return (
-                        <TouchableOpacity
-                          key={cls.id}
-                          style={styles.attendanceClassCard}
-                          onPress={() => setSelectedBookingClass(cls)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.attendanceClassName}>{cls.name} - {cls.age_group || cls.ageGroup || ''}</Text>
-                          <Text style={styles.attendanceClassTime}>{cls.time || 'No time'}{cls.duration ? ` • ${cls.duration}` : ''}</Text>
-                          <Text style={styles.attendanceClassCount}>{classBookings.length} students booked</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    return (
+                      <TouchableOpacity
+                        key={String(cls.id)}
+                        style={styles.attendanceClassCard}
+                        onPress={() => setSelectedBookingClass(cls)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.attendanceClassName}>{cls.name} - {cls.age_group || cls.ageGroup || ''}</Text>
+                        <Text style={styles.attendanceClassTime}>{cls.time || 'No time'}{cls.duration ? ' • ' + cls.duration : ''}</Text>
+                        <Text style={styles.attendanceClassCount}>{uniqueStudentCount} students booked</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
+
+                {getClassesForDay(selectedBookingDay).length === 0 && (
+                  <Text style={styles.emptyStateText}>No classes available on {selectedBookingDay}.</Text>
+                )}
               </View>
             ) : selectedBookingClass ? (
               <View>
@@ -1390,7 +1448,7 @@ export default function AdminPanel() {
                   <View>
                     <Text style={styles.attendanceStepTitle}>{selectedBookingDay}</Text>
                     <Text style={styles.attendanceClassName}>{selectedBookingClass.name} - {selectedBookingClass.age_group || selectedBookingClass.ageGroup || ''}</Text>
-                    <Text style={styles.attendanceClassTime}>{selectedBookingClass.time || 'No time'}{selectedBookingClass.duration ? ` • ${selectedBookingClass.duration}` : ''}</Text>
+                    <Text style={styles.attendanceClassTime}>{selectedBookingClass.time || 'No time'}{selectedBookingClass.duration ? ' • ' + selectedBookingClass.duration : ''}</Text>
                   </View>
                 </View>
 
@@ -1401,8 +1459,8 @@ export default function AdminPanel() {
                       String(booking.classId) === String(selectedBookingClass.id)
                   )
                   .filter((booking: any) => {
-                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
-                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    const parent = getBookingParent(booking);
+                    const child = getBookingChild(booking);
                     const search = bookingSearch.trim().toLowerCase();
                     if (!search) return true;
                     return (
@@ -1411,8 +1469,8 @@ export default function AdminPanel() {
                     );
                   })
                   .map((booking: any) => {
-                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
-                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    const parent = getBookingParent(booking);
+                    const child = getBookingChild(booking);
 
                     return (
                       <View key={booking.id} style={styles.attendanceStudentCard}>
@@ -1460,7 +1518,7 @@ export default function AdminPanel() {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>Attendance</Text>
-                <Text style={styles.attendanceSubtitle}>Choose a day, choose a class, then mark attendance.</Text>
+                <Text style={styles.attendanceSubtitle}>Choose a date from the calendar, open the class, then mark attendance.</Text>
               </View>
               <TouchableOpacity
                 style={styles.smallActionButton}
@@ -1474,6 +1532,50 @@ export default function AdminPanel() {
               </TouchableOpacity>
             </View>
 
+            <View style={styles.attendanceFilterBox}>
+              <Text style={styles.attendanceFilterLabel}>Attendance date</Text>
+              <View style={styles.attendanceFilterRow}>
+                {Platform.OS === 'web' ? (
+                  React.createElement('input', {
+                    type: 'date',
+                    value: selectedAttendanceCalendarDate,
+                    onChange: (event: any) => {
+                      setSelectedAttendanceCalendarDate(event.target.value);
+                      setSelectedAttendanceClassForDate(null);
+                    },
+                    style: styles.datePickerInput as any,
+                  })
+                ) : (
+                  <TextInput
+                    style={styles.attendanceDateInput}
+                    value={selectedAttendanceCalendarDate}
+                    onChangeText={(text) => {
+                      setSelectedAttendanceCalendarDate(text);
+                      setSelectedAttendanceClassForDate(null);
+                    }}
+                    placeholder="YYYY-MM-DD"
+                  />
+                )}
+
+                <TouchableOpacity
+                  style={styles.attendanceFilterButton}
+                  onPress={() => {
+                    setSelectedAttendanceCalendarDate(formatDateForInput(new Date()));
+                    setSelectedAttendanceClassForDate(null);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.attendanceFilterButtonText}>Today</Text>
+                </TouchableOpacity>
+              </View>
+
+              {!!selectedAttendanceCalendarDate && (
+                <Text style={styles.attendanceSelectedDateText}>
+                  Showing {formatAttendanceDate(selectedAttendanceCalendarDate)}
+                </Text>
+              )}
+            </View>
+
             <TextInput
               placeholder="Search student or parent..."
               style={styles.input}
@@ -1483,85 +1585,50 @@ export default function AdminPanel() {
 
             {bookingsLoading ? (
               <Text style={styles.emptyStateText}>Loading attendance...</Text>
-            ) : !selectedAttendanceWeekDay ? (
+            ) : !selectedAttendanceCalendarDate ? (
+              <Text style={styles.emptyStateText}>Choose a date to see classes.</Text>
+            ) : !selectedAttendanceClassForDate ? (
               <View>
-                <Text style={styles.attendanceStepTitle}>Select a day</Text>
-                <View style={styles.attendanceDayGrid}>
-                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
-                    const dayBookings = bookings.filter(
+                <Text style={styles.attendanceStepTitle}>{selectedAttendanceDateDayName} Classes</Text>
+                <Text style={styles.attendanceStepSubtitle}>{selectedAttendanceCalendarDate}</Text>
+
+                <View style={styles.attendanceClassGrid}>
+                  {getClassesForDay(selectedAttendanceDateDayName).map((cls: any) => {
+                    const classBookings = bookings.filter(
                       (booking: any) =>
                         booking.status !== 'cancelled' &&
-                        String(booking.classDay).toLowerCase() === day.toLowerCase()
+                        String(booking.classId) === String(cls.id) &&
+                        String(booking.classDate) === String(selectedAttendanceCalendarDate)
                     );
-                    const uniqueClassIds = Array.from(new Set(dayBookings.map((b: any) => b.classId)));
+                    const uniqueStudentCount = getUniqueStudentCount(classBookings);
+                    const present = classBookings.filter((b: any) => b.attended === true).length;
+                    const absent = classBookings.filter((b: any) => b.attended === false).length;
 
                     return (
                       <TouchableOpacity
-                        key={day}
-                        style={styles.attendanceDayCard}
-                        onPress={() => {
-                          setSelectedAttendanceWeekDay(day);
-                          setSelectedAttendanceClassForDay(null);
-                        }}
+                        key={String(cls.id)}
+                        style={styles.attendanceClassCard}
+                        onPress={() => setSelectedAttendanceClassForDate(cls)}
                         activeOpacity={0.85}
                       >
-                        <Text style={styles.attendanceDayTitle}>{day}</Text>
-                        <Text style={styles.attendanceDayCount}>{uniqueClassIds.length} classes • {dayBookings.length} students</Text>
+                        <Text style={styles.attendanceClassName}>{cls.name} - {cls.age_group || cls.ageGroup || ''}</Text>
+                        <Text style={styles.attendanceClassTime}>{cls.time || 'No time'}{cls.duration ? ' • ' + cls.duration : ''}</Text>
+                        <Text style={styles.attendanceClassCount}>{uniqueStudentCount} active/enrolled students</Text>
+                        <Text style={styles.attendanceClassStats}>{present} present • {absent} absent</Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
+
+                {getClassesForDay(selectedAttendanceDateDayName).length === 0 && (
+                  <Text style={styles.emptyStateText}>No classes scheduled on {selectedAttendanceDateDayName}.</Text>
+                )}
               </View>
-            ) : selectedAttendanceWeekDay && !selectedAttendanceClassForDay ? (
+            ) : selectedAttendanceClassForDate ? (
               <View>
                 <TouchableOpacity
                   style={styles.backToClassesButton}
-                  onPress={() => {
-                    setSelectedAttendanceWeekDay(null);
-                    setSelectedAttendanceClassForDay(null);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.backToClassesText}>← Back to days</Text>
-                </TouchableOpacity>
-
-                <Text style={styles.attendanceStepTitle}>{selectedAttendanceWeekDay} Classes</Text>
-
-                <View style={styles.attendanceClassGrid}>
-                  {(dbClasses.length > 0 ? dbClasses : classes)
-                    .filter((cls: any) => String(cls.day).toLowerCase() === selectedAttendanceWeekDay.toLowerCase())
-                    .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
-                    .map((cls: any) => {
-                      const classBookings = bookings.filter(
-                        (booking: any) =>
-                          booking.status !== 'cancelled' &&
-                          String(booking.classId) === String(cls.id)
-                      );
-
-                      const present = classBookings.filter((b: any) => b.attended === true).length;
-                      const absent = classBookings.filter((b: any) => b.attended === false).length;
-
-                      return (
-                        <TouchableOpacity
-                          key={cls.id}
-                          style={styles.attendanceClassCard}
-                          onPress={() => setSelectedAttendanceClassForDay(cls)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.attendanceClassName}>{cls.name} - {cls.age_group || cls.ageGroup || ''}</Text>
-                          <Text style={styles.attendanceClassTime}>{cls.time || 'No time'}{cls.duration ? ` • ${cls.duration}` : ''}</Text>
-                          <Text style={styles.attendanceClassCount}>{classBookings.length} students</Text>
-                          <Text style={styles.attendanceClassStats}>{present} present • {absent} absent</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                </View>
-              </View>
-            ) : selectedAttendanceClassForDay ? (
-              <View>
-                <TouchableOpacity
-                  style={styles.backToClassesButton}
-                  onPress={() => setSelectedAttendanceClassForDay(null)}
+                  onPress={() => setSelectedAttendanceClassForDate(null)}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.backToClassesText}>← Back to classes</Text>
@@ -1569,9 +1636,9 @@ export default function AdminPanel() {
 
                 <View style={styles.attendanceSelectedHeader}>
                   <View>
-                    <Text style={styles.attendanceStepTitle}>{selectedAttendanceWeekDay}</Text>
-                    <Text style={styles.attendanceClassName}>{selectedAttendanceClassForDay.name} - {selectedAttendanceClassForDay.age_group || selectedAttendanceClassForDay.ageGroup || ''}</Text>
-                    <Text style={styles.attendanceClassTime}>{selectedAttendanceClassForDay.time || 'No time'}{selectedAttendanceClassForDay.duration ? ` • ${selectedAttendanceClassForDay.duration}` : ''}</Text>
+                    <Text style={styles.attendanceStepTitle}>{formatAttendanceDate(selectedAttendanceCalendarDate)}</Text>
+                    <Text style={styles.attendanceClassName}>{selectedAttendanceClassForDate.name} - {selectedAttendanceClassForDate.age_group || selectedAttendanceClassForDate.ageGroup || ''}</Text>
+                    <Text style={styles.attendanceClassTime}>{selectedAttendanceClassForDate.time || 'No time'}{selectedAttendanceClassForDate.duration ? ' • ' + selectedAttendanceClassForDate.duration : ''}</Text>
                   </View>
                 </View>
 
@@ -1579,11 +1646,12 @@ export default function AdminPanel() {
                   .filter(
                     (booking: any) =>
                       booking.status !== 'cancelled' &&
-                      String(booking.classId) === String(selectedAttendanceClassForDay.id)
+                      String(booking.classId) === String(selectedAttendanceClassForDate.id) &&
+                      String(booking.classDate) === String(selectedAttendanceCalendarDate)
                   )
                   .filter((booking: any) => {
-                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
-                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    const parent = getBookingParent(booking);
+                    const child = getBookingChild(booking);
                     const search = attendanceSearch.trim().toLowerCase();
                     if (!search) return true;
                     return (
@@ -1592,8 +1660,8 @@ export default function AdminPanel() {
                     );
                   })
                   .map((booking: any) => {
-                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
-                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    const parent = getBookingParent(booking);
+                    const child = getBookingChild(booking);
                     const statusText = booking.attended === true ? 'Present' : booking.attended === false ? 'Absent' : 'Not marked';
 
                     return (
@@ -1629,9 +1697,10 @@ export default function AdminPanel() {
                 {bookings.filter(
                   (booking: any) =>
                     booking.status !== 'cancelled' &&
-                    String(booking.classId) === String(selectedAttendanceClassForDay.id)
+                    String(booking.classId) === String(selectedAttendanceClassForDate.id) &&
+                    String(booking.classDate) === String(selectedAttendanceCalendarDate)
                 ).length === 0 && (
-                  <Text style={styles.emptyStateText}>No students booked in this class.</Text>
+                  <Text style={styles.emptyStateText}>No active/enrolled kids in this class for this date.</Text>
                 )}
               </View>
             ) : null}
@@ -2518,6 +2587,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.darkGray,
     backgroundColor: Colors.white,
+  },
+  datePickerInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 180,
+    fontSize: 15,
+    color: Colors.darkGray,
+    backgroundColor: Colors.white,
+  },
+  attendanceSelectedDateText: {
+    fontSize: 13,
+    color: Colors.mediumGray,
+    marginTop: 10,
+    fontWeight: '600' as const,
   },
   attendanceFilterButton: {
     backgroundColor: Colors.primary,
