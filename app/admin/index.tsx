@@ -743,30 +743,87 @@ export default function AdminPanel() {
 
   const handleSaveClass = async () => {
     try {
-      if (editingClass) {
-        await updateClassMutation.mutateAsync({ id: editingClass.id, ...classForm });
-      } else {
-        await createClassMutation.mutateAsync(classForm);
+      const cleanName = classForm.name.trim();
+      const cleanAgeGroup = classForm.ageGroup.trim();
+      const cleanDay = classForm.day.trim();
+      const cleanTime = classForm.time.trim();
+      const cleanDuration = classForm.duration.trim();
+      const cleanDescription = classForm.description.trim();
+      const cleanCoachId = classForm.coachId.trim();
+
+      if (!cleanName || !cleanAgeGroup || !cleanDay || !cleanTime || !cleanDuration) {
+        const msg = 'Name, age group, day, time, and duration are required.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Missing information', msg);
+        return;
       }
-      console.log('Class saved successfully');
+
+      const payload = {
+        name: cleanName,
+        age_group: cleanAgeGroup,
+        level: classForm.level,
+        day: cleanDay,
+        time: cleanTime,
+        duration: cleanDuration,
+        coach_id: cleanCoachId || null,
+        capacity: Number(classForm.capacity) || 30,
+        enrolled: Number(classForm.enrolled) || 0,
+        description: cleanDescription || null,
+        day_of_week: Number(classForm.dayOfWeek) || 1,
+      };
+
+      if (editingClass) {
+        const { error } = await supabase
+          .from('classes')
+          .update(payload)
+          .eq('id', editingClass.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('classes')
+          .insert(payload);
+
+        if (error) throw error;
+      }
+
+      await refreshClasses();
+      await refreshBookings();
+      setShowClassModal(false);
+      setEditingClass(null);
+      console.log('Class saved directly to Supabase');
     } catch (error) {
       console.error('Failed to save class:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save class';
-      if (Platform.OS === 'web') {
-        alert(errorMessage);
-      } else {
-        Alert.alert('Error', errorMessage);
-      }
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Error', errorMessage);
     }
   };
 
   const handleDeleteClass = (id: string) => {
+    const deleteClass = async () => {
+      const { error } = await supabase
+        .from('classes')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        const errorMessage = error.message || 'Failed to delete class';
+        if (Platform.OS === 'web') alert(errorMessage);
+        else Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      await refreshClasses();
+      await refreshBookings();
+    };
+
     if (Platform.OS === 'web') {
-      if (window.confirm('Delete this class?')) deleteClassMutation.mutate({ id });
+      if (window.confirm('Delete this class?')) deleteClass();
     } else {
       Alert.alert('Delete', 'Are you sure?', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteClassMutation.mutate({ id }) },
+        { text: 'Delete', style: 'destructive', onPress: deleteClass },
       ]);
     }
   };
