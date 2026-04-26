@@ -21,7 +21,6 @@ import {
   Megaphone,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 
@@ -84,9 +83,7 @@ export default function HomeScreen() {
               style={styles.logoBorder}
             >
               <Image
-                source={{
-                  uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/v3zrj7cyl4nnc13f8gqyb',
-                }}
+                source={require('../../../assets/images/gymnest logo new white.jpeg')}
                 style={styles.logo}
                 resizeMode="contain"
               />
@@ -292,24 +289,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   logoShell: {
-    width: 86,
-    height: 86,
+    width: 120,
+    height: 90,
     borderRadius: 28,
   },
   logoBorder: {
-    width: 86,
-    height: 86,
+    width: 120,
+    height: 90,
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
+    width: 108,
+    height: 78,
+    borderRadius: 20,
   },
   badge: {
     flexDirection: 'row',
