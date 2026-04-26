@@ -789,23 +789,37 @@ export default function AdminPanel() {
 
   const handleEditClass = (item: any) => {
     setEditingClass(item);
+
     const ageGroup = 'age_group' in item ? item.age_group : item.ageGroup;
     const coachId = 'coach_id' in item ? item.coach_id : item.coachId;
     const rawDayOfWeek = 'day_of_week' in item ? item.day_of_week : item.dayOfWeek;
     const dayOfWeek = Number.isFinite(Number(rawDayOfWeek)) ? Number(rawDayOfWeek) : getDayOfWeekNumber(item.day);
-    setClassForm({ name: item.name, ageGroup, level: item.level, day: item.day, time: item.time, duration: item.duration, coachId, capacity: item.capacity, enrolled: item.enrolled, description: item.description, dayOfWeek });
+
+    setClassForm({
+      name: String(item.name ?? ''),
+      ageGroup: String(ageGroup ?? ''),
+      level: (item.level ?? 'Beginner') as 'Beginner' | 'Intermediate' | 'Advanced',
+      day: String(item.day ?? ''),
+      time: String(item.time ?? ''),
+      duration: String(item.duration ?? '60 min'),
+      coachId: String(coachId ?? ''),
+      capacity: Number(item.capacity) || 30,
+      enrolled: Number(item.enrolled) || 0,
+      description: String(item.description ?? ''),
+      dayOfWeek,
+    });
     setShowClassModal(true);
   };
 
   const handleSaveClass = async () => {
     try {
-      const cleanName = classForm.name.trim();
-      const cleanAgeGroup = classForm.ageGroup.trim();
-      const cleanDay = classForm.day.trim();
-      const cleanTime = classForm.time.trim();
-      const cleanDuration = classForm.duration.trim();
-      const cleanDescription = classForm.description.trim();
-      const cleanCoachId = classForm.coachId.trim();
+      const cleanName = String(classForm.name ?? '').trim();
+      const cleanAgeGroup = String(classForm.ageGroup ?? '').trim();
+      const cleanDay = String(classForm.day ?? '').trim();
+      const cleanTime = String(classForm.time ?? '').trim();
+      const cleanDuration = String(classForm.duration ?? '').trim();
+      const cleanDescription = String(classForm.description ?? '').trim();
+      const cleanCoachId = String(classForm.coachId ?? '').trim();
 
       if (!cleanName || !cleanAgeGroup || !cleanDay || !cleanTime || !cleanDuration) {
         const msg = 'Name, age group, day, time, and duration are required.';
@@ -845,7 +859,6 @@ export default function AdminPanel() {
 
       await refreshAdminClasses();
       await refreshBookings();
-      setSelectedClassesDay(cleanDay);
       setShowClassModal(false);
       setEditingClass(null);
       console.log('Class saved directly to Supabase');
@@ -1432,23 +1445,13 @@ export default function AdminPanel() {
                             <Text style={styles.classDetail}>{item.level} - {item.enrolled}/{item.capacity} enrolled</Text>
                           </View>
 
-                          <View style={styles.classActionButtons}>
-                            <TouchableOpacity
-                              style={styles.classEditButton}
-                              onPress={() => handleEditClass(item)}
-                              activeOpacity={0.85}
-                            >
-                              <Edit2 color={Colors.primary} size={16} />
-                              <Text style={styles.classEditButtonText}>Edit</Text>
+                          <View style={styles.cardActions}>
+                            <TouchableOpacity style={styles.iconButton} onPress={() => handleEditClass(item)}>
+                              <Edit2 color={Colors.primary} size={20} />
                             </TouchableOpacity>
 
-                            <TouchableOpacity
-                              style={styles.classDeleteButton}
-                              onPress={() => handleDeleteClass(item.id)}
-                              activeOpacity={0.85}
-                            >
-                              <Trash2 color={Colors.danger} size={16} />
-                              <Text style={styles.classDeleteButtonText}>Delete</Text>
+                            <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteClass(item.id)}>
+                              <Trash2 color={Colors.danger} size={20} />
                             </TouchableOpacity>
                           </View>
                         </View>
