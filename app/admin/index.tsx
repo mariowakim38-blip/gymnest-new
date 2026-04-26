@@ -942,21 +942,42 @@ export default function AdminPanel() {
     return new Set(items.map((booking: any) => `${booking.profileId || ''}::${booking.childId || ''}`)).size;
   };
 
-  const getBookingsForClass = (classId: string) => {
+  const normalizeText = (value: any) => String(value ?? '').toLowerCase().trim();
+
+  const getClassById = (classId: any) => {
+    return getSourceClasses().find((cls: any) => String(cls.id) === String(classId));
+  };
+
+  const isSameClass = (booking: any, cls: any) => {
+    if (!booking || !cls) return false;
+
+    const bookingClassId = String(booking.classId ?? '').trim();
+    const classId = String(cls.id ?? '').trim();
+
+    if (bookingClassId && classId && bookingClassId === classId) return true;
+
+    const bookingDay = normalizeText(booking.classDay);
+    const classDay = normalizeText(cls.day);
+    const bookingTime = normalizeText(booking.classTime);
+    const classTime = normalizeText(cls.time);
+
+    return !!bookingDay && !!classDay && !!bookingTime && !!classTime && bookingDay === classDay && bookingTime === classTime;
+  };
+
+  const getBookingsForClass = (classOrId: any) => {
+    const cls = typeof classOrId === 'object' ? classOrId : getClassById(classOrId);
+
     return bookings.filter(
       (booking: any) =>
         booking.status !== 'cancelled' &&
-        String(booking.classId) === String(classId)
+        isSameClass(booking, cls)
     );
   };
 
-  const getBookingsForClassOnDate = (classId: string, date: string) => {
-    return bookings.filter(
-      (booking: any) =>
-        booking.status !== 'cancelled' &&
-        String(booking.classId) === String(classId) &&
-        String(booking.classDate || booking.bookingDate || '') === String(date)
-    );
+  const getBookingsForClassOnDate = (classOrId: any, _date?: string) => {
+    // Attendance is class-enrollment based: if a child is booked/enrolled in this class,
+    // they should appear whenever that class runs on the selected calendar date.
+    return getBookingsForClass(classOrId);
   };
 
   const getWeekdayFromDateString = (dateString: string) => {
@@ -1412,7 +1433,7 @@ export default function AdminPanel() {
                   {getClassesForDay(selectedBookingDay)
                     .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
                     .map((cls: any) => {
-                      const classBookings = getBookingsForClass(cls.id);
+                      const classBookings = getBookingsForClass(cls);
                       const uniqueStudentCount = getUniqueStudentCount(classBookings);
 
                       return (
@@ -1640,7 +1661,7 @@ export default function AdminPanel() {
                   {getClassesForDay(selectedAttendanceWeekDay)
                     .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
                     .map((cls: any) => {
-                      const classBookings = getBookingsForClassOnDate(cls.id, selectedAttendanceDate);
+                      const classBookings = getBookingsForClassOnDate(cls, selectedAttendanceDate);
                       const makeupCount = attendanceRecords.filter((record: any) =>
                         record.attendance_type === 'makeup' &&
                         record.status !== 'deleted' &&
@@ -1688,7 +1709,7 @@ export default function AdminPanel() {
                   </View>
                 </View>
 
-                {getBookingsForClassOnDate(selectedAttendanceClassForDay.id, selectedAttendanceDate)
+                {getBookingsForClassOnDate(selectedAttendanceClassForDay, selectedAttendanceDate)
                   .filter((booking: any) => {
                     const parent = getParentForBooking(booking);
                     const child = getChildForBooking(booking);
@@ -1735,7 +1756,7 @@ export default function AdminPanel() {
                     );
                   })}
 
-                {getBookingsForClassOnDate(selectedAttendanceClassForDay.id, selectedAttendanceDate).length === 0 && (
+                {getBookingsForClassOnDate(selectedAttendanceClassForDay, selectedAttendanceDate).length === 0 && (
                   <Text style={styles.emptyStateText}>No active/enrolled kids in this class for this date.</Text>
                 )}
               </View>
