@@ -74,6 +74,12 @@ export default function AdminPanel() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [bookingsError, setBookingsError] = useState<any>(null);
+  const [editingBooking, setEditingBooking] = useState<any>(null);
+  const [bookingForm, setBookingForm] = useState({
+    booking_date: '',
+    class_id: '',
+    status: 'confirmed' as 'confirmed' | 'cancelled',
+  });
 
   const refreshUsers = async () => {
     if (!isAdmin) return;
@@ -336,14 +342,72 @@ export default function AdminPanel() {
   };
 
   const handleCancelBooking = (bookingId: string) => {
+    const cancelBooking = async () => {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'cancelled' })
+        .eq('id', bookingId);
+
+      if (error) {
+        const errorMessage = error.message || 'Failed to cancel booking';
+        if (Platform.OS === 'web') alert(errorMessage);
+        else Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      await refreshBookings();
+    };
+
     if (Platform.OS === 'web') {
-      if (window.confirm('Cancel this booking?')) cancelBookingMutation.mutate({ bookingId });
+      if (window.confirm('Cancel this booking?')) cancelBooking();
     } else {
       Alert.alert('Cancel Booking', 'Are you sure?', [
         { text: 'No', style: 'cancel' },
-        { text: 'Yes', style: 'destructive', onPress: () => cancelBookingMutation.mutate({ bookingId }) },
+        { text: 'Yes', style: 'destructive', onPress: cancelBooking },
       ]);
     }
+  };
+
+  const handleEditBooking = (booking: any) => {
+    setEditingBooking(booking);
+    setBookingForm({
+      booking_date: booking.classDate || booking.bookingDate || '',
+      class_id: booking.classId || '',
+      status: booking.status === 'cancelled' ? 'cancelled' : 'confirmed',
+    });
+  };
+
+  const handleSaveBooking = async () => {
+    if (!editingBooking) return;
+
+    const cleanDate = bookingForm.booking_date.trim();
+    const cleanClassId = bookingForm.class_id.trim();
+
+    if (!cleanDate || !cleanClassId) {
+      const msg = 'Booking date and class ID are required.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Missing information', msg);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        booking_date: cleanDate,
+        class_id: cleanClassId,
+        status: bookingForm.status,
+      })
+      .eq('id', editingBooking.id);
+
+    if (error) {
+      const errorMessage = error.message || 'Failed to update booking';
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Error', errorMessage);
+      return;
+    }
+
+    await refreshBookings();
+    setEditingBooking(null);
   };
 
   const handleMarkAttendance = async (bookingId: string, attended: boolean) => {
@@ -1065,13 +1129,11 @@ export default function AdminPanel() {
                       classDay: booking.classDay ?? '',
                       classTime: booking.classTime ?? '',
                       classDuration: booking.classDuration ?? '',
-                      dates: [],
-                      bookingIds: [],
+                      bookings: [],
                     };
                   }
 
-                  acc[key].dates.push(booking.classDate);
-                  acc[key].bookingIds.push(booking.id);
+                  acc[key].bookings.push(booking);
                   return acc;
                 }, {})
               ).map((group: any) => (
@@ -1088,33 +1150,60 @@ export default function AdminPanel() {
                   </View>
 
                   <View style={styles.scheduleBox}>
-                    {group.dates
-                      .sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())
-                      .map((date: string) => {
-                        const d = new Date(date);
+                    {group.bookings
+                      .sort((a: any, b: any) => new Date(a.classDate).getTime() - new Date(b.classDate).getTime())
+                      .map((booking: any) => {
+                        const d = new Date(booking.classDate);
                         const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
                         const formatted = d.toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',
                         });
+                        const isCancelled = booking.status === 'cancelled';
 
                         return (
-                          <TouchableOpacity
-                            key={date}
-                            style={styles.scheduleDateBox}
-                            activeOpacity={0.8}
-                            onPress={() => {
-                              if (Platform.OS === 'web') {
-                                alert(`${group.className}\n${dayName}, ${formatted}`);
-                              } else {
-                                Alert.alert(group.className, `${dayName}, ${formatted}`);
-                              }
-                            }}
+                          <View
+                            key={booking.id}
+                            style={[styles.scheduleDateBox, isCancelled && styles.scheduleDateBoxCancelled]}
                           >
-                            <Text style={styles.scheduleDay}>{dayName}</Text>
-                            <Text style={styles.scheduleDate}>{formatted}</Text>
-                          </TouchableOpacity>
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => {
+                                if (Platform.OS === 'web') {
+                                  alert(`${group.className}\n${dayName}, ${formatted}\nStatus: ${booking.status}`);
+                                } else {
+                                  Alert.alert(group.className, `${dayName}, ${formatted}\nStatus: ${booking.status}`);
+                                }
+                              }}
+                            >
+                              <Text style={[styles.scheduleDay, isCancelled && styles.cancelledText]}>{dayName}</Text>
+                              <Text style={[styles.scheduleDate, isCancelled && styles.cancelledText]}>{formatted}</Text>
+                              <Text style={[styles.bookingStatusText, isCancelled && styles.cancelledText]}>
+                                {isCancelled ? 'Cancelled' : 'Confirmed'}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <View style={styles.bookingDateActions}>
+                              <TouchableOpacity
+                                style={styles.bookingEditButton}
+                                onPress={() => handleEditBooking(booking)}
+                                activeOpacity={0.85}
+                              >
+                                <Text style={styles.bookingEditButtonText}>Edit</Text>
+                              </TouchableOpacity>
+
+                              {!isCancelled && (
+                                <TouchableOpacity
+                                  style={styles.bookingCancelButton}
+                                  onPress={() => handleCancelBooking(booking.id)}
+                                  activeOpacity={0.85}
+                                >
+                                  <Text style={styles.bookingCancelButtonText}>Cancel</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
                         );
                       })}
                   </View>
@@ -1488,6 +1577,60 @@ export default function AdminPanel() {
                   <Text style={styles.buttonSecondaryText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.button, styles.buttonPrimary]} onPress={handleSaveEvent}>
+                  <Text style={styles.buttonPrimaryText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {editingBooking && (
+        <View style={styles.modal}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Booking</Text>
+              <TouchableOpacity onPress={() => setEditingBooking(null)}>
+                <X color={Colors.darkGray} size={24} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.form}>
+              <Text style={styles.label}>Booking Date</Text>
+              <TextInput
+                style={styles.input}
+                value={bookingForm.booking_date}
+                onChangeText={(text) => setBookingForm({ ...bookingForm, booking_date: text })}
+                placeholder="YYYY-MM-DD"
+              />
+
+              <Text style={styles.label}>Class ID</Text>
+              <TextInput
+                style={styles.input}
+                value={bookingForm.class_id}
+                onChangeText={(text) => setBookingForm({ ...bookingForm, class_id: text })}
+                placeholder="Class UUID"
+              />
+
+              <Text style={styles.label}>Status</Text>
+              <View style={styles.typeButtons}>
+                {(['confirmed', 'cancelled'] as const).map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[styles.typeButton, bookingForm.status === status && styles.typeButtonActive]}
+                    onPress={() => setBookingForm({ ...bookingForm, status })}
+                  >
+                    <Text style={[styles.typeButtonText, bookingForm.status === status && styles.typeButtonTextActive]}>
+                      {status}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={() => setEditingBooking(null)}>
+                  <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.button, styles.buttonPrimary]} onPress={handleSaveBooking}>
                   <Text style={styles.buttonPrimaryText}>Save</Text>
                 </TouchableOpacity>
               </View>
@@ -1977,6 +2120,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.darkGray,
     marginTop: 2,
+  },
+  scheduleDateBoxCancelled: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  cancelledText: {
+    color: '#991B1B',
+  },
+  bookingStatusText: {
+    fontSize: 11,
+    color: Colors.mediumGray,
+    fontWeight: '700' as const,
+    marginTop: 4,
+  },
+  bookingDateActions: {
+    flexDirection: 'row' as const,
+    gap: 6,
+    marginTop: 10,
+  },
+  bookingEditButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  bookingEditButtonText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  bookingCancelButton: {
+    backgroundColor: Colors.danger,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  bookingCancelButtonText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
 
   attendanceSubtitle: {
