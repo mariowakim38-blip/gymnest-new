@@ -72,7 +72,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const { data: childrenData, error: childrenError } = await supabase
         .from('children')
         .select('*')
-        .eq('profile_id', profileData.id);
+        .eq('profile_id', profileData.id)
+        .order('created_at', { ascending: true });
 
       if (childrenError) {
         console.error('Children load error:', childrenError);
@@ -95,7 +96,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         phoneNumber: profileData.phone_number || '',
         password: '',
         role,
-        children: childrenData || [],
+        children: (childrenData || []).map((child) => ({
+          id: child.id,
+          name: child.name || '',
+          age: Number(child.age) || 0,
+        })),
       };
 
       console.log('Setting user with role:', userData.role);
@@ -176,50 +181,53 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('Admin account must be created in Supabase dashboard.');
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
-    try {
-      setIsLoading(true);
-      console.log('Login - Attempting login for:', email);
+  const login = useCallback(
+    async (email: string, password: string): Promise<AuthResult> => {
+      try {
+        setIsLoading(true);
+        console.log('Login - Attempting login for:', email);
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
-      if (error) {
-        console.log('Login error:', error.message);
-        return { success: false, error: error.message };
-      }
+        if (error) {
+          console.log('Login error:', error.message);
+          return { success: false, error: error.message };
+        }
 
-      if (!data.user) {
-        return { success: false, error: 'Login failed' };
-      }
+        if (!data.user) {
+          return { success: false, error: 'Login failed' };
+        }
 
-      setSession(data.session);
+        setSession(data.session);
 
-      const loadedUser = await loadUserProfile(data.user.id);
+        const loadedUser = await loadUserProfile(data.user.id);
 
-      if (!loadedUser) {
-        await supabase.auth.signOut({ scope: 'global' });
-        clearSupabaseStorage();
+        if (!loadedUser) {
+          await supabase.auth.signOut({ scope: 'global' });
+          clearSupabaseStorage();
+          return {
+            success: false,
+            error: 'No profile found for this account. Create a row in the profiles table.',
+          };
+        }
+
+        console.log('Login successful for:', email, 'role:', loadedUser.role);
+        return { success: true, user: loadedUser };
+      } catch (error) {
+        console.error('Login failed:', error);
         return {
           success: false,
-          error: 'No profile found for this account. Create a row in the profiles table.',
+          error: error instanceof Error ? error.message : 'Login failed. Please try again.',
         };
+      } finally {
+        setIsLoading(false);
       }
-
-      console.log('Login successful for:', email, 'role:', loadedUser.role);
-      return { success: true, user: loadedUser };
-    } catch (error) {
-      console.error('Login failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Login failed. Please try again.',
-      };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearSupabaseStorage, loadUserProfile]);
+    },
+    [clearSupabaseStorage, loadUserProfile]
+  );
 
   const logout = useCallback(async (): Promise<{ success: boolean }> => {
     try {
@@ -255,187 +263,271 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, [clearSupabaseStorage]);
 
-  const register = useCallback(async (
-    name: string,
-    username: string,
-    email: string,
-    password: string,
-    phoneNumber: string,
-    childName: string,
-    childAge: number,
-    secondChildName?: string,
-    secondChildAge?: number,
-    isAdmin?: boolean
-  ): Promise<AuthResult> => {
-    setIsLoading(true);
+  const register = useCallback(
+    async (
+      name: string,
+      username: string,
+      email: string,
+      password: string,
+      phoneNumber: string,
+      childName: string,
+      childAge: number,
+      secondChildName?: string,
+      secondChildAge?: number,
+      isAdmin?: boolean
+    ): Promise<AuthResult> => {
+      setIsLoading(true);
 
-    try {
-      console.log('Registration - Attempting registration for:', username);
+      try {
+        console.log('Registration - Attempting registration for:', username);
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
 
-      if (authError) {
-        return { success: false, error: authError.message };
-      }
-
-      if (!authData.user) {
-        return { success: false, error: 'Registration failed' };
-      }
-
-      const children: { name: string; age: number }[] = [];
-
-      if (childName && childAge) {
-        children.push({ name: childName, age: childAge });
-      }
-
-      if (secondChildName && secondChildAge) {
-        children.push({ name: secondChildName, age: secondChildAge });
-      }
-
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: authData.user.id,
-          name,
-          username,
-          phone_number: phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`,
-          role: isAdmin ? 'admin' : 'parent',
-        })
-        .select()
-        .single();
-
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        await supabase.auth.signOut({ scope: 'global' });
-        clearSupabaseStorage();
-        return { success: false, error: profileError.message || 'Failed to create profile' };
-      }
-
-      if (children.length > 0) {
-        const childrenInserts = children.map((child) => ({
-          profile_id: profileData.id,
-          name: child.name,
-          age: child.age,
-        }));
-
-        const { error: childrenError } = await supabase
-          .from('children')
-          .insert(childrenInserts);
-
-        if (childrenError) {
-          console.error('Failed to add children:', childrenError);
+        if (authError) {
+          return { success: false, error: authError.message };
         }
+
+        if (!authData.user) {
+          return { success: false, error: 'Registration failed' };
+        }
+
+        const children: { name: string; age: number }[] = [];
+
+        if (childName?.trim() && Number(childAge) > 0) {
+          children.push({
+            name: childName.trim(),
+            age: Number(childAge),
+          });
+        }
+
+        if (secondChildName?.trim() && Number(secondChildAge) > 0) {
+          children.push({
+            name: secondChildName.trim(),
+            age: Number(secondChildAge),
+          });
+        }
+
+        const cleanPhoneNumber = phoneNumber.startsWith('+961')
+          ? phoneNumber
+          : `+961${phoneNumber}`;
+
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: authData.user.id,
+            name: name.trim(),
+            username: username.trim(),
+            phone_number: cleanPhoneNumber,
+            role: isAdmin ? 'admin' : 'parent',
+          })
+          .select()
+          .single();
+
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          await supabase.auth.signOut({ scope: 'global' });
+          clearSupabaseStorage();
+          return {
+            success: false,
+            error: profileError.message || 'Failed to create profile',
+          };
+        }
+
+        if (children.length > 0) {
+          const childrenInserts = children.slice(0, 5).map((child) => ({
+            profile_id: profileData.id,
+            name: child.name,
+            age: child.age,
+          }));
+
+          const { error: childrenError } = await supabase
+            .from('children')
+            .insert(childrenInserts);
+
+          if (childrenError) {
+            console.error('Failed to add children:', childrenError);
+          }
+        }
+
+        const loadedUser = await loadUserProfile(authData.user.id);
+        console.log('Registration successful for:', username);
+
+        return { success: true, user: loadedUser };
+      } catch (error) {
+        console.error('Registration failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Registration failed. Please try again.',
+        };
+      } finally {
+        setIsLoading(false);
       }
+    },
+    [clearSupabaseStorage, loadUserProfile]
+  );
 
-      const loadedUser = await loadUserProfile(authData.user.id);
-      console.log('Registration successful for:', username);
-      return { success: true, user: loadedUser };
-    } catch (error) {
-      console.error('Registration failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Registration failed. Please try again.',
-      };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearSupabaseStorage, loadUserProfile]);
+  const updateProfile = useCallback(
+    async (
+      name: string,
+      email: string,
+      phoneNumber: string,
+      children: { id: string; name: string; age: number }[]
+    ): Promise<{ success: boolean; error?: string }> => {
+      try {
+        if (!user) {
+          return { success: false, error: 'No user logged in' };
+        }
 
-  const updateProfile = useCallback(async (
-    name: string,
-    email: string,
-    phoneNumber: string,
-    children: { id: string; name: string; age: number }[]
-  ) => {
-    try {
-      if (!user) return { success: false, error: 'No user logged in' };
+        const cleanChildren = children
+          .slice(0, 5)
+          .filter((child) => child.name.trim() && Number(child.age) > 0)
+          .map((child) => ({
+            id: child.id,
+            name: child.name.trim(),
+            age: Number(child.age),
+          }));
 
-      const cleanPhoneNumber = phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`;
+        const cleanPhoneNumber = phoneNumber.startsWith('+961')
+          ? phoneNumber
+          : `+961${phoneNumber}`;
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          name,
-          phone_number: cleanPhoneNumber,
-        })
-        .eq('id', user.id);
+        const { error: profileUpdateError } = await supabase
+          .from('profiles')
+          .update({
+            name: name.trim(),
+            phone_number: cleanPhoneNumber,
+          })
+          .eq('id', user.id);
 
-      if (error) {
-        return { success: false, error: error.message };
-      }
+        if (profileUpdateError) {
+          return { success: false, error: profileUpdateError.message };
+        }
 
-      const { data: existingChildren } = await supabase
-        .from('children')
-        .select('*')
-        .eq('profile_id', user.id);
-
-      const existingIds = (existingChildren || []).map((c) => c.id);
-      const newIds = children.map((c) => c.id);
-
-      const toDelete = existingIds.filter((id) => !newIds.includes(id));
-      const toUpdate = children.filter((c) => existingIds.includes(c.id));
-      const toInsert = children.filter((c) => !existingIds.includes(c.id));
-
-      if (toDelete.length > 0) {
-        await supabase.from('children').delete().in('id', toDelete);
-      }
-
-      for (const child of toUpdate) {
-        await supabase
+        const { data: existingChildren, error: existingChildrenError } = await supabase
           .from('children')
-          .update({ name: child.name, age: child.age })
-          .eq('id', child.id);
+          .select('*')
+          .eq('profile_id', user.id);
+
+        if (existingChildrenError) {
+          return { success: false, error: existingChildrenError.message };
+        }
+
+        const existingIds = (existingChildren || []).map((child) => child.id);
+
+        const submittedExistingIds = cleanChildren
+          .filter((child) => existingIds.includes(child.id))
+          .map((child) => child.id);
+
+        const toDelete = existingIds.filter((id) => !submittedExistingIds.includes(id));
+        const toUpdate = cleanChildren.filter((child) => existingIds.includes(child.id));
+        const toInsert = cleanChildren.filter((child) => !existingIds.includes(child.id));
+
+        if (toDelete.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('children')
+            .delete()
+            .in('id', toDelete);
+
+          if (deleteError) {
+            return { success: false, error: deleteError.message };
+          }
+        }
+
+        for (const child of toUpdate) {
+          const { error: updateChildError } = await supabase
+            .from('children')
+            .update({
+              name: child.name,
+              age: child.age,
+            })
+            .eq('id', child.id)
+            .eq('profile_id', user.id);
+
+          if (updateChildError) {
+            return { success: false, error: updateChildError.message };
+          }
+        }
+
+        if (toInsert.length > 0) {
+          const childrenInserts = toInsert.map((child) => ({
+            profile_id: user.id,
+            name: child.name,
+            age: child.age,
+          }));
+
+          const { error: insertError } = await supabase
+            .from('children')
+            .insert(childrenInserts);
+
+          if (insertError) {
+            return { success: false, error: insertError.message };
+          }
+        }
+
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
+
+        if (authUser && email.trim() && email.trim() !== authUser.email) {
+          const { error: emailUpdateError } = await supabase.auth.updateUser({
+            email: email.trim(),
+          });
+
+          if (emailUpdateError) {
+            return { success: false, error: emailUpdateError.message };
+          }
+        }
+
+        const refreshedUser = session?.user?.id
+          ? await loadUserProfile(session.user.id)
+          : null;
+
+        if (!refreshedUser) {
+          setUser({
+            ...user,
+            name: name.trim(),
+            email: email.trim(),
+            phoneNumber: cleanPhoneNumber,
+            children: cleanChildren,
+          });
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('Update profile failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Update failed',
+        };
       }
+    },
+    [user, session, loadUserProfile]
+  );
 
-      if (toInsert.length > 0) {
-        const childrenInserts = toInsert.map((child) => ({
-          profile_id: user.id,
-          name: child.name,
-          age: child.age,
-        }));
-
-        await supabase.from('children').insert(childrenInserts);
-      }
-
-      setUser({
-        ...user,
-        name,
-        email,
-        phoneNumber: cleanPhoneNumber,
-        children,
-      });
-
-      return { success: true };
-    } catch (error) {
-      console.error('Update profile failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Update failed',
-      };
-    }
-  }, [user]);
-
-  return useMemo(() => ({
-    user,
-    isLoading,
-    isAuthenticated: !!user && !!session,
-    session,
-    login,
-    logout,
-    register,
-    updateProfile,
-    initializeAdminAccount,
-  }), [
-    user,
-    isLoading,
-    session,
-    login,
-    logout,
-    register,
-    updateProfile,
-    initializeAdminAccount,
-  ]);
+  return useMemo(
+    () => ({
+      user,
+      isLoading,
+      isAuthenticated: !!user && !!session,
+      session,
+      login,
+      logout,
+      register,
+      updateProfile,
+      initializeAdminAccount,
+    }),
+    [
+      user,
+      isLoading,
+      session,
+      login,
+      logout,
+      register,
+      updateProfile,
+      initializeAdminAccount,
+    ]
+  );
 });
