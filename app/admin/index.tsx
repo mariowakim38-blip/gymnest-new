@@ -845,6 +845,7 @@ export default function AdminPanel() {
 
       await refreshAdminClasses();
       await refreshBookings();
+      setSelectedClassesDay(cleanDay);
       setShowClassModal(false);
       setEditingClass(null);
       console.log('Class saved directly to Supabase');
@@ -1431,13 +1432,23 @@ export default function AdminPanel() {
                             <Text style={styles.classDetail}>{item.level} - {item.enrolled}/{item.capacity} enrolled</Text>
                           </View>
 
-                          <View style={styles.cardActions}>
-                            <TouchableOpacity style={styles.iconButton} onPress={() => handleEditClass(item)}>
-                              <Edit2 color={Colors.primary} size={20} />
+                          <View style={styles.classActionButtons}>
+                            <TouchableOpacity
+                              style={styles.classEditButton}
+                              onPress={() => handleEditClass(item)}
+                              activeOpacity={0.85}
+                            >
+                              <Edit2 color={Colors.primary} size={16} />
+                              <Text style={styles.classEditButtonText}>Edit</Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteClass(item.id)}>
-                              <Trash2 color={Colors.danger} size={20} />
+                            <TouchableOpacity
+                              style={styles.classDeleteButton}
+                              onPress={() => handleDeleteClass(item.id)}
+                              activeOpacity={0.85}
+                            >
+                              <Trash2 color={Colors.danger} size={16} />
+                              <Text style={styles.classDeleteButtonText}>Delete</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
