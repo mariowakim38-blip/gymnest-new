@@ -182,16 +182,40 @@ export default function AdminPanel() {
     if (isAdmin) {
       refreshUsers();
       refreshBookings();
+      refreshAnnouncements();
+      refreshEvents();
     }
   }, [isAdmin]);
   const { data: privateSessions = [], isLoading: sessionsLoading, error: sessionsError, refetch: refreshSessions } = trpc.sessions.getAll.useQuery(undefined, {
     enabled: isAdmin,
     retry: false,
   });
-  const { data: announcements = [], isLoading: announcementsLoading, error: announcementsError, refetch: refreshAnnouncements } = trpc.announcements.getAll.useQuery(undefined, {
-    enabled: isAdmin,
-    retry: false,
-  });
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState<boolean>(false);
+  const [announcementsError, setAnnouncementsError] = useState<any>(null);
+
+  const refreshAnnouncements = async () => {
+    if (!isAdmin) return;
+
+    setAnnouncementsLoading(true);
+    setAnnouncementsError(null);
+
+    const { data, error } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Admin announcements fetch error:', error);
+      setAnnouncementsError(error);
+      setAnnouncements([]);
+      setAnnouncementsLoading(false);
+      return;
+    }
+
+    setAnnouncements(data ?? []);
+    setAnnouncementsLoading(false);
+  };
   const { data: galleryItems = [], isLoading: galleryLoading, error: galleryError, refetch: refreshGallery } = trpc.gallery.getAll.useQuery(undefined, {
     enabled: isAdmin,
     retry: false,
@@ -204,10 +228,32 @@ export default function AdminPanel() {
     enabled: isAdmin,
     retry: false,
   });
-  const { data: dbEvents = [], isLoading: eventsLoading, error: eventsError, refetch: refreshEvents } = trpc.events.getAll.useQuery(undefined, {
-    enabled: isAdmin,
-    retry: false,
-  });
+  const [dbEvents, setDbEvents] = useState<any[]>([]);
+  const [eventsLoading, setEventsLoading] = useState<boolean>(false);
+  const [eventsError, setEventsError] = useState<any>(null);
+
+  const refreshEvents = async () => {
+    if (!isAdmin) return;
+
+    setEventsLoading(true);
+    setEventsError(null);
+
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('date', { ascending: true });
+
+    if (error) {
+      console.error('Admin events fetch error:', error);
+      setEventsError(error);
+      setDbEvents([]);
+      setEventsLoading(false);
+      return;
+    }
+
+    setDbEvents(data ?? []);
+    setEventsLoading(false);
+  };
 
   useEffect(() => {
     if (usersError) {
@@ -243,10 +289,7 @@ export default function AdminPanel() {
   const cancelBookingMutation = trpc.bookings.cancel.useMutation({ onSuccess: () => refreshBookings() });
   const markAttendanceMutation = trpc.bookings.markAttendance.useMutation({ onSuccess: () => refreshBookings() });
   
-  const createAnnouncementMutation = trpc.announcements.create.useMutation({ onSuccess: () => { refreshAnnouncements(); setShowAnnouncementModal(false); } });
-  const updateAnnouncementMutation = trpc.announcements.update.useMutation({ onSuccess: () => { refreshAnnouncements(); setShowAnnouncementModal(false); } });
-  const deleteAnnouncementMutation = trpc.announcements.delete.useMutation({ onSuccess: () => refreshAnnouncements() });
-  
+
   const createGalleryMutation = trpc.gallery.create.useMutation({ onSuccess: () => { refreshGallery(); setShowGalleryModal(false); } });
   const updateGalleryMutation = trpc.gallery.update.useMutation({ onSuccess: () => { refreshGallery(); setShowGalleryModal(false); } });
   const deleteGalleryMutation = trpc.gallery.delete.useMutation({ onSuccess: () => refreshGallery() });
@@ -259,9 +302,7 @@ export default function AdminPanel() {
   const updateClassMutation = trpc.classes.update.useMutation({ onSuccess: () => { refreshClasses(); setShowClassModal(false); } });
   const deleteClassMutation = trpc.classes.delete.useMutation({ onSuccess: () => refreshClasses() });
 
-  const createEventMutation = trpc.events.create.useMutation({ onSuccess: () => { refreshEvents(); setShowEventModal(false); } });
-  const updateEventMutation = trpc.events.update.useMutation({ onSuccess: () => { refreshEvents(); setShowEventModal(false); } });
-  const deleteEventMutation = trpc.events.delete.useMutation({ onSuccess: () => refreshEvents() });
+
 
   useEffect(() => {
     if (user && user.role !== 'admin') {
@@ -337,30 +378,77 @@ export default function AdminPanel() {
 
   const handleSaveAnnouncement = async () => {
     try {
-      if (editingAnnouncement) {
-        await updateAnnouncementMutation.mutateAsync({ id: editingAnnouncement.id, ...announcementForm });
-      } else {
-        await createAnnouncementMutation.mutateAsync(announcementForm);
+      const cleanTitle = announcementForm.title.trim();
+      const cleanMessage = announcementForm.message.trim();
+      const cleanDate = announcementForm.date.trim();
+
+      if (!cleanTitle || !cleanMessage || !cleanDate) {
+        const msg = 'Title, message, and date are required.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Missing information', msg);
+        return;
       }
-      console.log('Announcement saved successfully');
+
+      if (editingAnnouncement) {
+        const { error } = await supabase
+          .from('announcements')
+          .update({
+            title: cleanTitle,
+            message: cleanMessage,
+            type: announcementForm.type,
+            date: cleanDate,
+          })
+          .eq('id', editingAnnouncement.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('announcements')
+          .insert({
+            title: cleanTitle,
+            message: cleanMessage,
+            type: announcementForm.type,
+            date: cleanDate,
+          });
+
+        if (error) throw error;
+      }
+
+      await refreshAnnouncements();
+      setShowAnnouncementModal(false);
+      setEditingAnnouncement(null);
+      console.log('Announcement saved directly to Supabase');
     } catch (error) {
       console.error('Failed to save announcement:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save announcement';
-      if (Platform.OS === 'web') {
-        alert(errorMessage);
-      } else {
-        Alert.alert('Error', errorMessage);
-      }
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Error', errorMessage);
     }
   };
 
   const handleDeleteAnnouncement = (id: string) => {
+    const deleteAnnouncement = async () => {
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        const errorMessage = error.message || 'Failed to delete announcement';
+        if (Platform.OS === 'web') alert(errorMessage);
+        else Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      await refreshAnnouncements();
+    };
+
     if (Platform.OS === 'web') {
-      if (window.confirm('Delete this announcement?')) deleteAnnouncementMutation.mutate({ id });
+      if (window.confirm('Delete this announcement?')) deleteAnnouncement();
     } else {
       Alert.alert('Delete', 'Are you sure?', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteAnnouncementMutation.mutate({ id }) },
+        { text: 'Delete', style: 'destructive', onPress: deleteAnnouncement },
       ]);
     }
   };
@@ -510,30 +598,80 @@ export default function AdminPanel() {
 
   const handleSaveEvent = async () => {
     try {
-      if (editingEvent) {
-        await updateEventMutation.mutateAsync({ id: editingEvent.id, ...eventForm });
-      } else {
-        await createEventMutation.mutateAsync(eventForm);
+      const cleanTitle = eventForm.title.trim();
+      const cleanDate = eventForm.date.trim();
+      const cleanTime = eventForm.time.trim();
+      const cleanDescription = eventForm.description.trim();
+      const cleanLocation = eventForm.location.trim();
+      const cleanImageUrl = eventForm.imageUrl.trim();
+
+      if (!cleanTitle || !cleanDate || !cleanTime || !cleanDescription || !cleanLocation) {
+        const msg = 'Title, date, time, description, and location are required.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Missing information', msg);
+        return;
       }
-      console.log('Event saved successfully');
+
+      const payload = {
+        title: cleanTitle,
+        date: cleanDate,
+        time: cleanTime,
+        type: eventForm.type,
+        description: cleanDescription,
+        location: cleanLocation,
+        image_url: cleanImageUrl || null,
+      };
+
+      if (editingEvent) {
+        const { error } = await supabase
+          .from('events')
+          .update(payload)
+          .eq('id', editingEvent.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('events')
+          .insert(payload);
+
+        if (error) throw error;
+      }
+
+      await refreshEvents();
+      setShowEventModal(false);
+      setEditingEvent(null);
+      console.log('Event saved directly to Supabase');
     } catch (error) {
       console.error('Failed to save event:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save event';
-      if (Platform.OS === 'web') {
-        alert(errorMessage);
-      } else {
-        Alert.alert('Error', errorMessage);
-      }
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Error', errorMessage);
     }
   };
 
   const handleDeleteEvent = (id: string) => {
+    const deleteEvent = async () => {
+      const { error } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        const errorMessage = error.message || 'Failed to delete event';
+        if (Platform.OS === 'web') alert(errorMessage);
+        else Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      await refreshEvents();
+    };
+
     if (Platform.OS === 'web') {
-      if (window.confirm('Delete this event?')) deleteEventMutation.mutate({ id });
+      if (window.confirm('Delete this event?')) deleteEvent();
     } else {
       Alert.alert('Delete', 'Are you sure?', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteEventMutation.mutate({ id }) },
+        { text: 'Delete', style: 'destructive', onPress: deleteEvent },
       ]);
     }
   };
