@@ -60,6 +60,15 @@ export default function AdminPanel() {
   const [editingEvent, setEditingEvent] = useState<any>(null);
   const [eventForm, setEventForm] = useState({ title: '', date: '', time: '', type: 'Competition' as 'Competition' | 'Workshop' | 'Showcase' | 'Camp', description: '', location: '', imageUrl: '' });
 
+  const [selectedBookingDay, setSelectedBookingDay] = useState<string | null>(null);
+  const [selectedBookingClass, setSelectedBookingClass] = useState<any | null>(null);
+  const [bookingSearch, setBookingSearch] = useState<string>('');
+
+  const [selectedAttendanceWeekDay, setSelectedAttendanceWeekDay] = useState<string | null>(null);
+  const [selectedAttendanceClassForDay, setSelectedAttendanceClassForDay] = useState<any | null>(null);
+  const [attendanceSearch, setAttendanceSearch] = useState<string>('');
+
+  const [selectedClassesDay, setSelectedClassesDay] = useState<string | null>(null);
   const isAdmin = user?.role === 'admin';
 
   const handleLogout = async () => {
@@ -1132,31 +1141,83 @@ export default function AdminPanel() {
                 <Plus color={Colors.white} size={20} />
               </TouchableOpacity>
             </View>
-            {(dbClasses.length > 0 ? dbClasses : classes).map((item: Database['public']['Tables']['classes']['Row'] | Class) => {
-              const isDbClass = 'age_group' in item;
-              return (
-                <View key={item.id} style={styles.card}>
-                  <View style={styles.cardHeader}>
-                    <View style={styles.classInfo}>
-                      <Text style={styles.className}>{item.name} - {isDbClass ? item.age_group : (item as Class).ageGroup}</Text>
-                      <Text style={styles.classDetail}>{item.day} {item.time} ({item.duration})</Text>
-                      <Text style={styles.classDetail}>{item.level} - {item.enrolled}/{item.capacity} enrolled</Text>
-                    </View>
-                    <View style={styles.cardActions}>
-                      <TouchableOpacity style={styles.iconButton} onPress={() => handleEditClass(item)}>
-                        <Edit2 color={Colors.primary} size={20} />
+
+            {!selectedClassesDay && (
+              <View>
+                <Text style={styles.attendanceStepTitle}>Select a day</Text>
+
+                <View style={styles.attendanceDayGrid}>
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
+                    const dayClasses = (dbClasses.length > 0 ? dbClasses : classes).filter(
+                      (cls: any) => String(cls.day).toLowerCase() === day.toLowerCase()
+                    );
+
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={styles.attendanceDayCard}
+                        onPress={() => setSelectedClassesDay(day)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.attendanceDayTitle}>{day}</Text>
+                        <Text style={styles.attendanceDayCount}>{dayClasses.length} classes</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteClass(item.id)}>
-                        <Trash2 color={Colors.danger} size={20} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                    );
+                  })}
                 </View>
-              );
-            })}
+              </View>
+            )}
+
+            {selectedClassesDay && (
+              <View>
+                <TouchableOpacity
+                  style={styles.backToClassesButton}
+                  onPress={() => setSelectedClassesDay(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.backToClassesText}>← Back to days</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.attendanceStepTitle}>{selectedClassesDay} Classes</Text>
+
+                {(dbClasses.length > 0 ? dbClasses : classes)
+                  .filter((item: any) => String(item.day).toLowerCase() === selectedClassesDay.toLowerCase())
+                  .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
+                  .map((item: any) => {
+                    const ageGroup = item.age_group ?? item.ageGroup ?? '';
+
+                    return (
+                      <View key={item.id} style={styles.card}>
+                        <View style={styles.cardHeader}>
+                          <View style={styles.classInfo}>
+                            <Text style={styles.className}>{item.name} - {ageGroup}</Text>
+                            <Text style={styles.classDetail}>{item.day} {item.time} ({item.duration})</Text>
+                            <Text style={styles.classDetail}>{item.level} - {item.enrolled}/{item.capacity} enrolled</Text>
+                          </View>
+
+                          <View style={styles.cardActions}>
+                            <TouchableOpacity style={styles.iconButton} onPress={() => handleEditClass(item)}>
+                              <Edit2 color={Colors.primary} size={20} />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteClass(item.id)}>
+                              <Trash2 color={Colors.danger} size={20} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                {(dbClasses.length > 0 ? dbClasses : classes).filter(
+                  (item: any) => String(item.day).toLowerCase() === selectedClassesDay.toLowerCase()
+                ).length === 0 && (
+                  <Text style={styles.emptyStateText}>No classes available on {selectedClassesDay}.</Text>
+                )}
+              </View>
+            )}
           </View>
         )}
-
         {activeTab === 'events' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -1221,7 +1282,10 @@ export default function AdminPanel() {
         {activeTab === 'bookings' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>All Bookings</Text>
+              <View>
+                <Text style={styles.sectionTitle}>Bookings</Text>
+                <Text style={styles.attendanceSubtitle}>Choose a day, choose a class, then manage the booked students.</Text>
+              </View>
               <TouchableOpacity
                 style={styles.smallActionButton}
                 onPress={() => refreshBookings()}
@@ -1231,117 +1295,172 @@ export default function AdminPanel() {
               </TouchableOpacity>
             </View>
 
+            <TextInput
+              placeholder="Search student or parent..."
+              style={styles.input}
+              value={bookingSearch}
+              onChangeText={setBookingSearch}
+            />
+
             {bookingsLoading ? (
               <Text style={styles.emptyStateText}>Loading bookings...</Text>
             ) : bookings.length === 0 ? (
               <Text style={styles.emptyStateText}>No bookings found.</Text>
-            ) : (
-              Object.values(
-                bookings.reduce((acc: any, booking: any) => {
-                  const key = `${booking.profileId}-${booking.childId}-${booking.classId}`;
+            ) : !selectedBookingDay ? (
+              <View>
+                <Text style={styles.attendanceStepTitle}>Select a day</Text>
+                <View style={styles.attendanceDayGrid}>
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
+                    const dayBookings = bookings.filter(
+                      (booking: any) =>
+                        booking.status !== 'cancelled' &&
+                        String(booking.classDay).toLowerCase() === day.toLowerCase()
+                    );
+                    const uniqueClassIds = Array.from(new Set(dayBookings.map((b: any) => b.classId)));
 
-                  if (!acc[key]) {
-                    const parent = allUsers.find((u) => u.id === booking.profileId);
-                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={styles.attendanceDayCard}
+                        onPress={() => {
+                          setSelectedBookingDay(day);
+                          setSelectedBookingClass(null);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.attendanceDayTitle}>{day}</Text>
+                        <Text style={styles.attendanceDayCount}>{uniqueClassIds.length} classes • {dayBookings.length} students</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : selectedBookingDay && !selectedBookingClass ? (
+              <View>
+                <TouchableOpacity
+                  style={styles.backToClassesButton}
+                  onPress={() => {
+                    setSelectedBookingDay(null);
+                    setSelectedBookingClass(null);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.backToClassesText}>← Back to days</Text>
+                </TouchableOpacity>
 
-                    acc[key] = {
-                      key,
-                      parentName: parent?.name ?? 'Unknown parent',
-                      childName: child?.name ?? 'Unknown child',
-                      className: booking.className ?? getClassName(booking.classId),
-                      classDay: booking.classDay ?? '',
-                      classTime: booking.classTime ?? '',
-                      classDuration: booking.classDuration ?? '',
-                      bookings: [],
-                    };
-                  }
+                <Text style={styles.attendanceStepTitle}>{selectedBookingDay} Classes</Text>
 
-                  acc[key].bookings.push(booking);
-                  return acc;
-                }, {})
-              ).map((group: any) => (
-                <View key={group.key} style={styles.bookingGroupCard}>
-                  <View style={styles.bookingGroupHeader}>
-                    <View style={styles.bookingInfo}>
-                      <Text style={styles.bookingClass}>{group.className}</Text>
-                      <Text style={styles.bookingScheduleLine}>
-                        {group.classDay || 'Class day'}{group.classTime ? ` • ${group.classTime}` : ''}{group.classDuration ? ` • ${group.classDuration}` : ''}
-                      </Text>
-                      <Text style={styles.bookingUser}>Student: {group.childName}</Text>
-                      <Text style={styles.bookingDate}>Parent: {group.parentName}</Text>
-                    </View>
-                  </View>
+                <View style={styles.attendanceClassGrid}>
+                  {(dbClasses.length > 0 ? dbClasses : classes)
+                    .filter((cls: any) => String(cls.day).toLowerCase() === selectedBookingDay.toLowerCase())
+                    .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
+                    .map((cls: any) => {
+                      const classBookings = bookings.filter(
+                        (booking: any) =>
+                          booking.status !== 'cancelled' &&
+                          String(booking.classId) === String(cls.id)
+                      );
 
-                  <View style={styles.scheduleBox}>
-                    {group.bookings
-                      .sort((a: any, b: any) => new Date(a.classDate).getTime() - new Date(b.classDate).getTime())
-                      .map((booking: any) => {
-                        const d = new Date(booking.classDate);
-                        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
-                        const formatted = d.toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        });
-                        const isCancelled = booking.status === 'cancelled';
+                      return (
+                        <TouchableOpacity
+                          key={cls.id}
+                          style={styles.attendanceClassCard}
+                          onPress={() => setSelectedBookingClass(cls)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.attendanceClassName}>{cls.name} - {cls.age_group || cls.ageGroup || ''}</Text>
+                          <Text style={styles.attendanceClassTime}>{cls.time || 'No time'}{cls.duration ? ` • ${cls.duration}` : ''}</Text>
+                          <Text style={styles.attendanceClassCount}>{classBookings.length} students booked</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </View>
+              </View>
+            ) : selectedBookingClass ? (
+              <View>
+                <TouchableOpacity
+                  style={styles.backToClassesButton}
+                  onPress={() => setSelectedBookingClass(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.backToClassesText}>← Back to classes</Text>
+                </TouchableOpacity>
 
-                        return (
-                          <View
-                            key={booking.id}
-                            style={[styles.scheduleDateBox, isCancelled && styles.scheduleDateBoxCancelled]}
-                          >
-                            <TouchableOpacity
-                              activeOpacity={0.8}
-                              onPress={() => {
-                                if (Platform.OS === 'web') {
-                                  alert(`${group.className}\n${dayName}, ${formatted}\nStatus: ${booking.status}`);
-                                } else {
-                                  Alert.alert(group.className, `${dayName}, ${formatted}\nStatus: ${booking.status}`);
-                                }
-                              }}
-                            >
-                              <Text style={[styles.scheduleDay, isCancelled && styles.cancelledText]}>{dayName}</Text>
-                              <Text style={[styles.scheduleDate, isCancelled && styles.cancelledText]}>{formatted}</Text>
-                              <Text style={[styles.bookingStatusText, isCancelled && styles.cancelledText]}>
-                                {isCancelled ? 'Cancelled' : 'Confirmed'}
-                              </Text>
-                            </TouchableOpacity>
-
-                            <View style={styles.bookingDateActions}>
-                              <TouchableOpacity
-                                style={styles.bookingEditButton}
-                                onPress={() => handleEditBooking(booking)}
-                                activeOpacity={0.85}
-                              >
-                                <Text style={styles.bookingEditButtonText}>Edit</Text>
-                              </TouchableOpacity>
-
-                              {!isCancelled && (
-                                <TouchableOpacity
-                                  style={styles.bookingCancelButton}
-                                  onPress={() => handleCancelBooking(booking.id)}
-                                  activeOpacity={0.85}
-                                >
-                                  <Text style={styles.bookingCancelButtonText}>Cancel</Text>
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          </View>
-                        );
-                      })}
+                <View style={styles.attendanceSelectedHeader}>
+                  <View>
+                    <Text style={styles.attendanceStepTitle}>{selectedBookingDay}</Text>
+                    <Text style={styles.attendanceClassName}>{selectedBookingClass.name} - {selectedBookingClass.age_group || selectedBookingClass.ageGroup || ''}</Text>
+                    <Text style={styles.attendanceClassTime}>{selectedBookingClass.time || 'No time'}{selectedBookingClass.duration ? ` • ${selectedBookingClass.duration}` : ''}</Text>
                   </View>
                 </View>
-              ))
-            )}
+
+                {bookings
+                  .filter(
+                    (booking: any) =>
+                      booking.status !== 'cancelled' &&
+                      String(booking.classId) === String(selectedBookingClass.id)
+                  )
+                  .filter((booking: any) => {
+                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
+                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    const search = bookingSearch.trim().toLowerCase();
+                    if (!search) return true;
+                    return (
+                      String(parent?.name || '').toLowerCase().includes(search) ||
+                      String(child?.name || '').toLowerCase().includes(search)
+                    );
+                  })
+                  .map((booking: any) => {
+                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
+                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+
+                    return (
+                      <View key={booking.id} style={styles.attendanceStudentCard}>
+                        <View style={styles.attendanceStudentInfo}>
+                          <Text style={styles.attendanceName}>{child?.name || 'Unknown student'}</Text>
+                          <Text style={styles.attendanceParent}>Parent: {parent?.name || 'Unknown parent'}</Text>
+                          <Text style={styles.attendanceStatus}>Booking date: {booking.classDate || 'No date'}</Text>
+                          <Text style={styles.attendanceStatus}>Status: {booking.status || 'confirmed'}</Text>
+                        </View>
+
+                        <View style={styles.attendanceActions}>
+                          <TouchableOpacity
+                            style={styles.bookingEditButton}
+                            onPress={() => handleEditBooking(booking)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={styles.bookingEditButtonText}>Edit</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.bookingCancelButton}
+                            onPress={() => handleCancelBooking(booking.id)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={styles.bookingCancelButtonText}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                {bookings.filter(
+                  (booking: any) =>
+                    booking.status !== 'cancelled' &&
+                    String(booking.classId) === String(selectedBookingClass.id)
+                ).length === 0 && (
+                  <Text style={styles.emptyStateText}>No bookings available for this class.</Text>
+                )}
+              </View>
+            ) : null}
           </View>
         )}
-
         {activeTab === 'attendance' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>Attendance</Text>
-                <Text style={styles.attendanceSubtitle}>Filter by date, choose a class hour, then mark attendance.</Text>
+                <Text style={styles.attendanceSubtitle}>Choose a day, choose a class, then mark attendance.</Text>
               </View>
               <TouchableOpacity
                 style={styles.smallActionButton}
@@ -1355,118 +1474,125 @@ export default function AdminPanel() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.attendanceFilterBox}>
-              <Text style={styles.attendanceFilterLabel}>Choose date</Text>
-              <View style={styles.attendanceFilterRow}>
-                <TextInput
-                  style={styles.attendanceDateInput}
-                  value={attendanceDateFilter}
-                  onChangeText={(text) => {
-                    setAttendanceDateFilter(text);
-                    setSelectedAttendanceDate('');
-                    setSelectedAttendanceClassKey('');
-                  }}
-                  placeholder="YYYY-MM-DD"
-                />
-                <TouchableOpacity
-                  style={styles.attendanceFilterButton}
-                  onPress={() => {
-                    const wantedDate = attendanceDateFilter.trim();
-                    if (!wantedDate) {
-                      Alert.alert('Date required', 'Enter a date like 2026-04-27');
-                      return;
-                    }
-                    setSelectedAttendanceDate(wantedDate);
-                    setSelectedAttendanceClassKey('');
-                  }}
-                >
-                  <Text style={styles.attendanceFilterButtonText}>Show classes</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.attendanceFilterButtonSecondary}
-                  onPress={() => {
-                    const todayString = formatDateForInput(new Date());
-                    setAttendanceDateFilter(todayString);
-                    setSelectedAttendanceDate(todayString);
-                    setSelectedAttendanceClassKey('');
-                  }}
-                >
-                  <Text style={styles.attendanceFilterButtonSecondaryText}>Today</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.attendanceFilterButtonSecondary}
-                  onPress={() => {
-                    setAttendanceDateFilter('');
-                    setSelectedAttendanceDate('');
-                    setSelectedAttendanceClassKey('');
-                  }}
-                >
-                  <Text style={styles.attendanceFilterButtonSecondaryText}>Clear</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <TextInput
+              placeholder="Search student or parent..."
+              style={styles.input}
+              value={attendanceSearch}
+              onChangeText={setAttendanceSearch}
+            />
 
             {bookingsLoading ? (
               <Text style={styles.emptyStateText}>Loading attendance...</Text>
-            ) : selectedAttendanceDate ? (
-              !selectedAttendanceDay ? (
-                <Text style={styles.emptyStateText}>No classes booked on {selectedAttendanceDate}.</Text>
-              ) : !selectedAttendanceClass ? (
-                <View>
-                  <Text style={styles.attendanceStepTitle}>{formatAttendanceDate(selectedAttendanceDate)}</Text>
-                  <Text style={styles.attendanceStepSubtitle}>Select the class/hour</Text>
+            ) : !selectedAttendanceWeekDay ? (
+              <View>
+                <Text style={styles.attendanceStepTitle}>Select a day</Text>
+                <View style={styles.attendanceDayGrid}>
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
+                    const dayBookings = bookings.filter(
+                      (booking: any) =>
+                        booking.status !== 'cancelled' &&
+                        String(booking.classDay).toLowerCase() === day.toLowerCase()
+                    );
+                    const uniqueClassIds = Array.from(new Set(dayBookings.map((b: any) => b.classId)));
 
-                  <View style={styles.attendanceClassGrid}>
-                    {selectedAttendanceClasses.map((cls: any) => {
-                      const makeupCount = attendanceRecords.filter((record: any) => record.attendance_type === 'makeup' && record.attended_date === selectedAttendanceDate && String(record.attended_class_id) === String(cls.classId)).length;
-                      const present = cls.bookings.filter((b: any) => b.attended === true).length + makeupCount;
-                      const absent = cls.bookings.filter((b: any) => b.attended === false).length;
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={styles.attendanceDayCard}
+                        onPress={() => {
+                          setSelectedAttendanceWeekDay(day);
+                          setSelectedAttendanceClassForDay(null);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.attendanceDayTitle}>{day}</Text>
+                        <Text style={styles.attendanceDayCount}>{uniqueClassIds.length} classes • {dayBookings.length} students</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : selectedAttendanceWeekDay && !selectedAttendanceClassForDay ? (
+              <View>
+                <TouchableOpacity
+                  style={styles.backToClassesButton}
+                  onPress={() => {
+                    setSelectedAttendanceWeekDay(null);
+                    setSelectedAttendanceClassForDay(null);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.backToClassesText}>← Back to days</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.attendanceStepTitle}>{selectedAttendanceWeekDay} Classes</Text>
+
+                <View style={styles.attendanceClassGrid}>
+                  {(dbClasses.length > 0 ? dbClasses : classes)
+                    .filter((cls: any) => String(cls.day).toLowerCase() === selectedAttendanceWeekDay.toLowerCase())
+                    .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
+                    .map((cls: any) => {
+                      const classBookings = bookings.filter(
+                        (booking: any) =>
+                          booking.status !== 'cancelled' &&
+                          String(booking.classId) === String(cls.id)
+                      );
+
+                      const present = classBookings.filter((b: any) => b.attended === true).length;
+                      const absent = classBookings.filter((b: any) => b.attended === false).length;
 
                       return (
                         <TouchableOpacity
-                          key={cls.key}
+                          key={cls.id}
                           style={styles.attendanceClassCard}
-                          onPress={() => setSelectedAttendanceClassKey(cls.key)}
+                          onPress={() => setSelectedAttendanceClassForDay(cls)}
                           activeOpacity={0.85}
                         >
-                          <Text style={styles.attendanceClassName}>{cls.className}</Text>
-                          <Text style={styles.attendanceClassTime}>{cls.classTime || 'No time'}{cls.classDuration ? ` • ${cls.classDuration}` : ''}</Text>
-                          <Text style={styles.attendanceClassCount}>{cls.bookings.length + makeupCount} students</Text>
+                          <Text style={styles.attendanceClassName}>{cls.name} - {cls.age_group || cls.ageGroup || ''}</Text>
+                          <Text style={styles.attendanceClassTime}>{cls.time || 'No time'}{cls.duration ? ` • ${cls.duration}` : ''}</Text>
+                          <Text style={styles.attendanceClassCount}>{classBookings.length} students</Text>
                           <Text style={styles.attendanceClassStats}>{present} present • {absent} absent</Text>
                         </TouchableOpacity>
                       );
                     })}
+                </View>
+              </View>
+            ) : selectedAttendanceClassForDay ? (
+              <View>
+                <TouchableOpacity
+                  style={styles.backToClassesButton}
+                  onPress={() => setSelectedAttendanceClassForDay(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.backToClassesText}>← Back to classes</Text>
+                </TouchableOpacity>
+
+                <View style={styles.attendanceSelectedHeader}>
+                  <View>
+                    <Text style={styles.attendanceStepTitle}>{selectedAttendanceWeekDay}</Text>
+                    <Text style={styles.attendanceClassName}>{selectedAttendanceClassForDay.name} - {selectedAttendanceClassForDay.age_group || selectedAttendanceClassForDay.ageGroup || ''}</Text>
+                    <Text style={styles.attendanceClassTime}>{selectedAttendanceClassForDay.time || 'No time'}{selectedAttendanceClassForDay.duration ? ` • ${selectedAttendanceClassForDay.duration}` : ''}</Text>
                   </View>
                 </View>
-              ) : (
-                <View>
-                  <TouchableOpacity
-                    style={styles.backToClassesButton}
-                    onPress={() => setSelectedAttendanceClassKey('')}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.backToClassesText}>← Back to classes</Text>
-                  </TouchableOpacity>
 
-                  <View style={styles.attendanceSelectedHeader}>
-                    <View>
-                      <Text style={styles.attendanceStepTitle}>{formatAttendanceDate(selectedAttendanceDate)}</Text>
-                      <Text style={styles.attendanceClassName}>{selectedAttendanceClass.className}</Text>
-                      <Text style={styles.attendanceClassTime}>{selectedAttendanceClass.classTime || 'No time'}{selectedAttendanceClass.classDuration ? ` • ${selectedAttendanceClass.classDuration}` : ''}</Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.makeupAddButton}
-                      onPress={handleOpenMakeupModal}
-                      activeOpacity={0.85}
-                    >
-                      <Plus color={Colors.white} size={16} />
-                      <Text style={styles.makeupAddButtonText}>Add Make-Up Student</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {selectedAttendanceClass.bookings.map((booking: any) => {
-                    const parent = allUsers.find((u) => u.id === booking.profileId);
+                {bookings
+                  .filter(
+                    (booking: any) =>
+                      booking.status !== 'cancelled' &&
+                      String(booking.classId) === String(selectedAttendanceClassForDay.id)
+                  )
+                  .filter((booking: any) => {
+                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
+                    const child = parent?.children?.find((c: any) => c.id === booking.childId);
+                    const search = attendanceSearch.trim().toLowerCase();
+                    if (!search) return true;
+                    return (
+                      String(parent?.name || '').toLowerCase().includes(search) ||
+                      String(child?.name || '').toLowerCase().includes(search)
+                    );
+                  })
+                  .map((booking: any) => {
+                    const parent = allUsers.find((u: any) => u.id === booking.profileId);
                     const child = parent?.children?.find((c: any) => c.id === booking.childId);
                     const statusText = booking.attended === true ? 'Present' : booking.attended === false ? 'Absent' : 'Not marked';
 
@@ -1475,6 +1601,7 @@ export default function AdminPanel() {
                         <View style={styles.attendanceStudentInfo}>
                           <Text style={styles.attendanceName}>{child?.name || 'Unknown student'}</Text>
                           <Text style={styles.attendanceParent}>Parent: {parent?.name || 'Unknown parent'}</Text>
+                          <Text style={styles.attendanceStatus}>Booking date: {booking.classDate || 'No date'}</Text>
                           <Text style={styles.attendanceStatus}>Status: {statusText}</Text>
                         </View>
 
@@ -1499,60 +1626,15 @@ export default function AdminPanel() {
                     );
                   })}
 
-                  {selectedAttendanceClassMakeupRecords.map((record: any) => {
-                    const parent = allUsers.find((u: any) => u.id === record.profile_id);
-                    const child = parent?.children?.find((c: any) => c.id === record.child_id);
-
-                    return (
-                      <View key={record.id} style={[styles.attendanceStudentCard, styles.makeupStudentCard]}>
-                        <View style={styles.attendanceStudentInfo}>
-                          <Text style={styles.attendanceName}>{child?.name || 'Unknown make-up student'}</Text>
-                          <Text style={styles.attendanceParent}>Parent: {parent?.name || 'Unknown parent'}</Text>
-                          <Text style={styles.attendanceStatus}>Status: Present • Make-up</Text>
-                          {!!record.note && <Text style={styles.makeupNoteText}>Note: {record.note}</Text>}
-                        </View>
-
-                        <View style={styles.attendanceActions}>
-                          <View style={[styles.attendancePresentButton, styles.attendanceButtonActive]}>
-                            <Text style={styles.attendanceButtonTextActive}>Present</Text>
-                          </View>
-
-                          <TouchableOpacity
-                            style={styles.attendanceAbsentButton}
-                            onPress={() => handleDeleteMakeupRecord(record.id)}
-                            activeOpacity={0.85}
-                          >
-                            <Text style={styles.attendanceAbsentText}>Remove</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )
-            ) : (
-              <View>
-                <Text style={styles.attendanceStepTitle}>Select a day</Text>
-                <View style={styles.attendanceDayGrid}>
-                  {visibleAttendanceDays.map((day: any) => (
-                    <TouchableOpacity
-                      key={day.date}
-                      style={styles.attendanceDayCard}
-                      onPress={() => {
-                        setSelectedAttendanceDate(day.date);
-                        setAttendanceDateFilter(day.date);
-                        setSelectedAttendanceClassKey('');
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.attendanceDayTitle}>{safeDate(day.date).toLocaleDateString('en-US', { weekday: 'long' })}</Text>
-                      <Text style={styles.attendanceDayDate}>{safeDate(day.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
-                      <Text style={styles.attendanceDayCount}>{Object.keys(day.classes).length} classes • {day.totalStudents} students</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {bookings.filter(
+                  (booking: any) =>
+                    booking.status !== 'cancelled' &&
+                    String(booking.classId) === String(selectedAttendanceClassForDay.id)
+                ).length === 0 && (
+                  <Text style={styles.emptyStateText}>No students booked in this class.</Text>
+                )}
               </View>
-            )}
+            ) : null}
           </View>
         )}
         </ScrollView>
