@@ -974,10 +974,40 @@ export default function AdminPanel() {
     );
   };
 
-  const getBookingsForClassOnDate = (classOrId: any, _date?: string) => {
-    // Attendance is class-enrollment based: if a child is booked/enrolled in this class,
-    // they should appear whenever that class runs on the selected calendar date.
-    return getBookingsForClass(classOrId);
+  const getBookingDateKey = (booking: any) => String(booking.classDate || booking.bookingDate || '').trim();
+
+  const getBookingsForClassOnDate = (classOrId: any, date?: string) => {
+    const selectedDate = String(date || '').trim();
+    const classBookings = getBookingsForClass(classOrId);
+
+    if (!selectedDate) return classBookings;
+
+    return classBookings.filter(
+      (booking: any) => getBookingDateKey(booking) === selectedDate
+    );
+  };
+
+  const getStudentBookingGroupsForClass = (classOrId: any) => {
+    const grouped = getBookingsForClass(classOrId).reduce((acc: any, booking: any) => {
+      const key = `${booking.profileId || ''}::${booking.childId || ''}`;
+
+      if (!acc[key]) {
+        acc[key] = {
+          key,
+          profileId: booking.profileId,
+          childId: booking.childId,
+          bookings: [],
+        };
+      }
+
+      acc[key].bookings.push(booking);
+      return acc;
+    }, {});
+
+    return Object.values(grouped).map((group: any) => ({
+      ...group,
+      bookings: group.bookings.sort((a: any, b: any) => safeDate(getBookingDateKey(a)).getTime() - safeDate(getBookingDateKey(b)).getTime()),
+    }));
   };
 
   const getWeekdayFromDateString = (dateString: string) => {
@@ -1473,10 +1503,11 @@ export default function AdminPanel() {
                   </View>
                 </View>
 
-                {getBookingsForClass(selectedBookingClass.id)
-                  .filter((booking: any) => {
-                    const parent = getParentForBooking(booking);
-                    const child = getChildForBooking(booking);
+                {getStudentBookingGroupsForClass(selectedBookingClass)
+                  .filter((group: any) => {
+                    const firstBooking = group.bookings[0];
+                    const parent = getParentForBooking(firstBooking);
+                    const child = getChildForBooking(firstBooking);
                     const search = bookingSearch.trim().toLowerCase();
                     if (!search) return true;
                     return (
@@ -1485,24 +1516,33 @@ export default function AdminPanel() {
                       String(child?.name || '').toLowerCase().includes(search)
                     );
                   })
-                  .map((booking: any) => {
-                    const parent = getParentForBooking(booking);
-                    const child = getChildForBooking(booking);
+                  .map((group: any) => {
+                    const firstBooking = group.bookings[0];
+                    const parent = getParentForBooking(firstBooking);
+                    const child = getChildForBooking(firstBooking);
 
                     return (
-                      <View key={booking.id} style={styles.attendanceStudentCard}>
+                      <View key={group.key} style={styles.attendanceStudentCard}>
                         <View style={styles.attendanceStudentInfo}>
                           <Text style={styles.attendanceName}>{child?.name || 'Unknown student'}</Text>
                           <Text style={styles.attendanceParent}>Parent: {parent?.name || 'Unknown parent'}</Text>
                           {!!parent?.phoneNumber && <Text style={styles.attendanceStatus}>Phone: {parent.phoneNumber}</Text>}
-                          <Text style={styles.attendanceStatus}>Booking date: {booking.classDate || 'No date'}</Text>
-                          <Text style={styles.attendanceStatus}>Status: {booking.status || 'confirmed'}</Text>
+
+                          <View style={styles.bookingDatesWrap}>
+                            {group.bookings.map((booking: any) => (
+                              <View key={booking.id} style={styles.bookingDatePill}>
+                                <Text style={styles.bookingDatePillText}>
+                                  {getBookingDateKey(booking) ? formatAttendanceDate(getBookingDateKey(booking)) : 'No date'}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
                         </View>
 
                         <View style={styles.attendanceActions}>
                           <TouchableOpacity
                             style={styles.bookingEditButton}
-                            onPress={() => handleEditBooking(booking)}
+                            onPress={() => handleEditBooking(firstBooking)}
                             activeOpacity={0.85}
                           >
                             <Text style={styles.bookingEditButtonText}>Edit</Text>
@@ -1510,7 +1550,7 @@ export default function AdminPanel() {
 
                           <TouchableOpacity
                             style={styles.bookingCancelButton}
-                            onPress={() => handleCancelBooking(booking.id)}
+                            onPress={() => handleCancelBooking(firstBooking.id)}
                             activeOpacity={0.85}
                           >
                             <Text style={styles.bookingCancelButtonText}>Cancel</Text>
@@ -1520,7 +1560,7 @@ export default function AdminPanel() {
                     );
                   })}
 
-                {getBookingsForClass(selectedBookingClass.id).length === 0 && (
+                {getStudentBookingGroupsForClass(selectedBookingClass).length === 0 && (
                   <Text style={styles.emptyStateText}>No bookings available for this class.</Text>
                 )}
               </View>
