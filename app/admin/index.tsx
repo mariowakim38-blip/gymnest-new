@@ -72,6 +72,9 @@ export default function AdminPanel() {
   const [attendancePickerDate, setAttendancePickerDate] = useState<Date>(new Date());
 
   const [selectedClassesDay, setSelectedClassesDay] = useState<string | null>(null);
+  const [adminClasses, setAdminClasses] = useState<any[]>([]);
+  const [adminClassesLoading, setAdminClassesLoading] = useState<boolean>(false);
+  const [adminClassesError, setAdminClassesError] = useState<any>(null);
   const isAdmin = user?.role === 'admin';
 
   const handleLogout = async () => {
@@ -219,6 +222,30 @@ export default function AdminPanel() {
     setAttendanceRecords(data ?? []);
   };
 
+  const refreshAdminClasses = async () => {
+    if (!isAdmin) return;
+
+    setAdminClassesLoading(true);
+    setAdminClassesError(null);
+
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .order('day_of_week', { ascending: true })
+      .order('time', { ascending: true });
+
+    if (error) {
+      console.error('Admin classes fetch error:', error);
+      setAdminClassesError(error);
+      setAdminClasses([]);
+      setAdminClassesLoading(false);
+      return;
+    }
+
+    setAdminClasses(data ?? []);
+    setAdminClassesLoading(false);
+  };
+
   useEffect(() => {
     if (isAdmin) {
       refreshUsers();
@@ -226,6 +253,7 @@ export default function AdminPanel() {
       refreshAnnouncements();
       refreshEvents();
       refreshAttendanceRecords();
+      refreshAdminClasses();
     }
   }, [isAdmin]);
   const { data: privateSessions = [], isLoading: sessionsLoading, error: sessionsError, refetch: refreshSessions } = trpc.sessions.getAll.useQuery(undefined, {
@@ -815,7 +843,7 @@ export default function AdminPanel() {
         if (error) throw error;
       }
 
-      await refreshClasses();
+      await refreshAdminClasses();
       await refreshBookings();
       setShowClassModal(false);
       setEditingClass(null);
@@ -842,7 +870,7 @@ export default function AdminPanel() {
         return;
       }
 
-      await refreshClasses();
+      await refreshAdminClasses();
       await refreshBookings();
     };
 
@@ -950,7 +978,7 @@ export default function AdminPanel() {
   };
 
   const getClassName = (classId: string) => {
-    const cls: any = [...(dbClasses as any[]), ...(classes as any[])].find((c: any) => String(c.id) === String(classId));
+    const cls: any = getSourceClasses().find((c: any) => String(c.id) === String(classId));
     if (!cls) return 'Unknown Class';
     const ageGroup = cls.age_group ?? cls.ageGroup ?? '';
     return `${cls.name} - ${ageGroup}`;
@@ -963,7 +991,7 @@ export default function AdminPanel() {
   };
 
   const filterClassesByDate = () => {
-    const sourceClasses = dbClasses.length > 0 ? dbClasses : classes;
+    const sourceClasses = getSourceClasses();
     if (!searchDate.trim()) return sourceClasses as any[];
     return (sourceClasses as any[]).filter((cls: any) => {
       const classDates = getClassDates(cls.id);
@@ -1001,7 +1029,7 @@ export default function AdminPanel() {
     });
   };
 
-  const getSourceClasses = () => (dbClasses.length > 0 ? dbClasses : classes) as any[];
+  const getSourceClasses = () => (adminClasses.length > 0 ? adminClasses : classes) as any[];
 
   const getClassesForDay = (day: string | null) => {
     if (!day) return [];
@@ -1332,18 +1360,31 @@ export default function AdminPanel() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Classes</Text>
-              <TouchableOpacity style={styles.addButton} onPress={handleAddClass}>
-                <Plus color={Colors.white} size={20} />
-              </TouchableOpacity>
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  style={styles.smallActionButton}
+                  onPress={() => refreshAdminClasses()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.smallActionButtonText}>Refresh</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.addButton} onPress={handleAddClass}>
+                  <Plus color={Colors.white} size={20} />
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {!selectedClassesDay && (
+            {adminClassesLoading && (
+              <Text style={styles.emptyStateText}>Loading classes...</Text>
+            )}
+
+            {!adminClassesLoading && !selectedClassesDay && (
               <View>
                 <Text style={styles.attendanceStepTitle}>Select a day</Text>
 
                 <View style={styles.attendanceDayGrid}>
                   {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => {
-                    const dayClasses = (dbClasses.length > 0 ? dbClasses : classes).filter(
+                    const dayClasses = getSourceClasses().filter(
                       (cls: any) => String(cls.day).toLowerCase() === day.toLowerCase()
                     );
 
@@ -1363,7 +1404,7 @@ export default function AdminPanel() {
               </View>
             )}
 
-            {selectedClassesDay && (
+            {!adminClassesLoading && selectedClassesDay && (
               <View>
                 <TouchableOpacity
                   style={styles.backToClassesButton}
@@ -1375,7 +1416,7 @@ export default function AdminPanel() {
 
                 <Text style={styles.attendanceStepTitle}>{selectedClassesDay} Classes</Text>
 
-                {(dbClasses.length > 0 ? dbClasses : classes)
+                {getSourceClasses()
                   .filter((item: any) => String(item.day).toLowerCase() === selectedClassesDay.toLowerCase())
                   .sort((a: any, b: any) => String(a.time).localeCompare(String(b.time)))
                   .map((item: any) => {
@@ -1404,7 +1445,7 @@ export default function AdminPanel() {
                     );
                   })}
 
-                {(dbClasses.length > 0 ? dbClasses : classes).filter(
+                {getSourceClasses().filter(
                   (item: any) => String(item.day).toLowerCase() === selectedClassesDay.toLowerCase()
                 ).length === 0 && (
                   <Text style={styles.emptyStateText}>No classes available on {selectedClassesDay}.</Text>
