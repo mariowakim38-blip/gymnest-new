@@ -33,6 +33,12 @@ export default function AdminPanel() {
   const [attendanceDateFilter, setAttendanceDateFilter] = useState<string>('');
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>('');
   const [selectedAttendanceClassKey, setSelectedAttendanceClassKey] = useState<string>('');
+
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [showMakeupModal, setShowMakeupModal] = useState<boolean>(false);
+  const [makeupSearch, setMakeupSearch] = useState<string>('');
+  const [selectedMakeupChild, setSelectedMakeupChild] = useState<any>(null);
+  const [makeupNote, setMakeupNote] = useState<string>('');
   
   const [showAnnouncementModal, setShowAnnouncementModal] = useState<boolean>(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
@@ -184,12 +190,30 @@ export default function AdminPanel() {
     setBookingsLoading(false);
   };
 
+  const refreshAttendanceRecords = async () => {
+    if (!isAdmin) return;
+
+    const { data, error } = await supabase
+      .from('attendance_records')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Admin attendance records fetch error:', error);
+      setAttendanceRecords([]);
+      return;
+    }
+
+    setAttendanceRecords(data ?? []);
+  };
+
   useEffect(() => {
     if (isAdmin) {
       refreshUsers();
       refreshBookings();
       refreshAnnouncements();
       refreshEvents();
+      refreshAttendanceRecords();
     }
   }, [isAdmin]);
   const { data: privateSessions = [], isLoading: sessionsLoading, error: sessionsError, refetch: refreshSessions } = trpc.sessions.getAll.useQuery(undefined, {
@@ -426,6 +450,94 @@ export default function AdminPanel() {
     }
 
     await refreshBookings();
+  };
+
+  const makeupChildOptions = allUsers
+    .flatMap((u: any) =>
+      (u.children || []).map((child: any) => ({
+        ...child,
+        profile_id: u.id,
+        parentName: u.name,
+      }))
+    )
+    .filter((child: any) =>
+      makeupSearch.trim()
+        ? String(child.name || '').toLowerCase().includes(makeupSearch.toLowerCase()) ||
+          String(child.parentName || '').toLowerCase().includes(makeupSearch.toLowerCase())
+        : true
+    );
+
+  const handleOpenMakeupModal = () => {
+    setMakeupSearch('');
+    setSelectedMakeupChild(null);
+    setMakeupNote('');
+    setShowMakeupModal(true);
+  };
+
+  const handleAddMakeupStudent = async () => {
+    if (!selectedMakeupChild || !selectedAttendanceClass || !selectedAttendanceDate) {
+      const msg = 'Select a student before adding make-up attendance.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Missing student', msg);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('attendance_records')
+      .insert({
+        profile_id: selectedMakeupChild.profile_id,
+        child_id: selectedMakeupChild.id,
+        attended_class_id: selectedAttendanceClass.classId,
+        attended_date: selectedAttendanceDate,
+        attendance_type: 'makeup',
+        status: 'present',
+        note: makeupNote.trim() || 'Make-up class',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      const errorMessage = error.message || 'Failed to add make-up student.';
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Error', errorMessage);
+      return;
+    }
+
+    if (data) {
+      setAttendanceRecords((prev) => [data, ...prev]);
+    }
+
+    setShowMakeupModal(false);
+    setSelectedMakeupChild(null);
+    setMakeupSearch('');
+    setMakeupNote('');
+  };
+
+  const handleDeleteMakeupRecord = async (recordId: string) => {
+    const deleteRecord = async () => {
+      const { error } = await supabase
+        .from('attendance_records')
+        .delete()
+        .eq('id', recordId);
+
+      if (error) {
+        const errorMessage = error.message || 'Failed to remove make-up student.';
+        if (Platform.OS === 'web') alert(errorMessage);
+        else Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      setAttendanceRecords((prev) => prev.filter((record) => record.id !== recordId));
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Remove this make-up student from attendance?')) deleteRecord();
+    } else {
+      Alert.alert('Remove student', 'Remove this make-up student from attendance?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: deleteRecord },
+      ]);
+    }
   };
 
   const handleAddAnnouncement = () => {
@@ -840,6 +952,17 @@ export default function AdminPanel() {
     ? selectedAttendanceClasses.find((cls: any) => cls.key === selectedAttendanceClassKey)
     : null;
 
+  const selectedAttendanceClassMakeupRecords =
+    selectedAttendanceClass && selectedAttendanceDate
+      ? attendanceRecords.filter(
+          (record: any) =>
+            record.attendance_type === 'makeup' &&
+            record.status !== 'deleted' &&
+            record.attended_date === selectedAttendanceDate &&
+            String(record.attended_class_id) === String(selectedAttendanceClass.classId)
+        )
+      : [];
+
   if (user?.role !== 'admin') return null;
 
   return (
@@ -1222,7 +1345,10 @@ export default function AdminPanel() {
               </View>
               <TouchableOpacity
                 style={styles.smallActionButton}
-                onPress={() => refreshBookings()}
+                onPress={() => {
+                  refreshBookings();
+                  refreshAttendanceRecords();
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.smallActionButtonText}>Refresh</Text>
@@ -1292,7 +1418,8 @@ export default function AdminPanel() {
 
                   <View style={styles.attendanceClassGrid}>
                     {selectedAttendanceClasses.map((cls: any) => {
-                      const present = cls.bookings.filter((b: any) => b.attended === true).length;
+                      const makeupCount = attendanceRecords.filter((record: any) => record.attendance_type === 'makeup' && record.attended_date === selectedAttendanceDate && String(record.attended_class_id) === String(cls.classId)).length;
+                      const present = cls.bookings.filter((b: any) => b.attended === true).length + makeupCount;
                       const absent = cls.bookings.filter((b: any) => b.attended === false).length;
 
                       return (
@@ -1304,7 +1431,7 @@ export default function AdminPanel() {
                         >
                           <Text style={styles.attendanceClassName}>{cls.className}</Text>
                           <Text style={styles.attendanceClassTime}>{cls.classTime || 'No time'}{cls.classDuration ? ` • ${cls.classDuration}` : ''}</Text>
-                          <Text style={styles.attendanceClassCount}>{cls.bookings.length} students</Text>
+                          <Text style={styles.attendanceClassCount}>{cls.bookings.length + makeupCount} students</Text>
                           <Text style={styles.attendanceClassStats}>{present} present • {absent} absent</Text>
                         </TouchableOpacity>
                       );
@@ -1327,6 +1454,15 @@ export default function AdminPanel() {
                       <Text style={styles.attendanceClassName}>{selectedAttendanceClass.className}</Text>
                       <Text style={styles.attendanceClassTime}>{selectedAttendanceClass.classTime || 'No time'}{selectedAttendanceClass.classDuration ? ` • ${selectedAttendanceClass.classDuration}` : ''}</Text>
                     </View>
+
+                    <TouchableOpacity
+                      style={styles.makeupAddButton}
+                      onPress={handleOpenMakeupModal}
+                      activeOpacity={0.85}
+                    >
+                      <Plus color={Colors.white} size={16} />
+                      <Text style={styles.makeupAddButtonText}>Add Make-Up Student</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {selectedAttendanceClass.bookings.map((booking: any) => {
@@ -1357,6 +1493,36 @@ export default function AdminPanel() {
                             activeOpacity={0.85}
                           >
                             <Text style={[styles.attendanceAbsentText, booking.attended === false && styles.attendanceButtonTextActive]}>Absent</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  {selectedAttendanceClassMakeupRecords.map((record: any) => {
+                    const parent = allUsers.find((u: any) => u.id === record.profile_id);
+                    const child = parent?.children?.find((c: any) => c.id === record.child_id);
+
+                    return (
+                      <View key={record.id} style={[styles.attendanceStudentCard, styles.makeupStudentCard]}>
+                        <View style={styles.attendanceStudentInfo}>
+                          <Text style={styles.attendanceName}>{child?.name || 'Unknown make-up student'}</Text>
+                          <Text style={styles.attendanceParent}>Parent: {parent?.name || 'Unknown parent'}</Text>
+                          <Text style={styles.attendanceStatus}>Status: Present • Make-up</Text>
+                          {!!record.note && <Text style={styles.makeupNoteText}>Note: {record.note}</Text>}
+                        </View>
+
+                        <View style={styles.attendanceActions}>
+                          <View style={[styles.attendancePresentButton, styles.attendanceButtonActive]}>
+                            <Text style={styles.attendanceButtonTextActive}>Present</Text>
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.attendanceAbsentButton}
+                            onPress={() => handleDeleteMakeupRecord(record.id)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={styles.attendanceAbsentText}>Remove</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1578,6 +1744,79 @@ export default function AdminPanel() {
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.button, styles.buttonPrimary]} onPress={handleSaveEvent}>
                   <Text style={styles.buttonPrimaryText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {showMakeupModal && selectedAttendanceClass && (
+        <View style={styles.modal}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Make-Up Student</Text>
+              <TouchableOpacity onPress={() => setShowMakeupModal(false)}>
+                <X color={Colors.darkGray} size={24} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.form}>
+              <Text style={styles.label}>Class</Text>
+              <Text style={styles.makeupContextText}>
+                {selectedAttendanceClass.className} • {formatAttendanceDate(selectedAttendanceDate)}
+              </Text>
+
+              <Text style={styles.label}>Search Student or Parent</Text>
+              <TextInput
+                style={styles.input}
+                value={makeupSearch}
+                onChangeText={setMakeupSearch}
+                placeholder="Type child or parent name"
+              />
+
+              <View style={styles.makeupResultsBox}>
+                {makeupChildOptions.slice(0, 8).map((child: any) => {
+                  const isSelected = selectedMakeupChild?.id === child.id;
+
+                  return (
+                    <TouchableOpacity
+                      key={child.id}
+                      style={[styles.makeupResultCard, isSelected && styles.makeupResultCardActive]}
+                      onPress={() => setSelectedMakeupChild(child)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.makeupResultName, isSelected && styles.makeupResultNameActive]}>
+                        {child.name}
+                      </Text>
+                      <Text style={[styles.makeupResultParent, isSelected && styles.makeupResultParentActive]}>
+                        Parent: {child.parentName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>Note</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={makeupNote}
+                onChangeText={setMakeupNote}
+                placeholder="Example: Make-up for missed Monday class"
+                multiline
+                numberOfLines={3}
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={() => setShowMakeupModal(false)}>
+                  <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonPrimary, !selectedMakeupChild && styles.buttonDisabled]}
+                  onPress={handleAddMakeupStudent}
+                  disabled={!selectedMakeupChild}
+                >
+                  <Text style={styles.buttonPrimaryText}>Add Present</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -2388,6 +2627,70 @@ const styles = StyleSheet.create({
   },
   attendanceButtonTextActive: {
     color: Colors.white,
+  },
+  makeupAddButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  makeupAddButtonText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  makeupStudentCard: {
+    borderWidth: 2,
+    borderColor: '#A7F3D0',
+    backgroundColor: '#ECFDF5',
+  },
+  makeupNoteText: {
+    fontSize: 12,
+    color: '#065F46',
+    marginTop: 2,
+  },
+  makeupContextText: {
+    fontSize: 14,
+    color: Colors.darkGray,
+    fontWeight: '700' as const,
+    marginBottom: 16,
+  },
+  makeupResultsBox: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  makeupResultCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: Colors.white,
+  },
+  makeupResultCardActive: {
+    borderColor: Colors.primary,
+    backgroundColor: '#E3F2FD',
+  },
+  makeupResultName: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: Colors.darkGray,
+    marginBottom: 2,
+  },
+  makeupResultNameActive: {
+    color: Colors.primary,
+  },
+  makeupResultParent: {
+    fontSize: 12,
+    color: Colors.mediumGray,
+  },
+  makeupResultParentActive: {
+    color: Colors.darkGray,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   emptyStateText: {
     fontSize: 16,
