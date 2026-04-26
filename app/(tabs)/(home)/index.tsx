@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -22,14 +22,33 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
-import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { data: announcements = [] } = trpc.announcements.getAll.useQuery();
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      const { data, error } = await supabase
+        .from('announcements')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('Home announcements fetch error:', error);
+        setAnnouncements([]);
+        return;
+      }
+
+      setAnnouncements(data || []);
+    };
+
+    fetchAnnouncements();
+  }, []);
 
   const quickActions = [
     {
