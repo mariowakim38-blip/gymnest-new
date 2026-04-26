@@ -8,17 +8,28 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
-import { Trophy, Calendar, TrendingUp } from 'lucide-react-native';
+import { Trophy, Calendar, TrendingUp, Clock, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+
+type ProgressData = {
+  percentage: number;
+  completedSessions: number;
+  totalSessions: number;
+  remainingSessions: number;
+  expiredSessions: number;
+  makeupSessions: number;
+  usableSessions: number;
+};
 
 export default function ProgressScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
 
   const [bookings, setBookings] = useState<any[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [classesMap, setClassesMap] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
 
@@ -45,13 +56,32 @@ export default function ProgressScreen() {
         return;
       }
 
+      const { data: attendanceData, error: attendanceError } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .in('child_id', childIds)
+        .order('attended_date', { ascending: true });
+
+      if (attendanceError) {
+        console.error('Progress attendance records error:', attendanceError);
+        setAttendanceRecords([]);
+      } else {
+        setAttendanceRecords(attendanceData ?? []);
+      }
+
       const classIds = Array.from(
         new Set((bookingsData ?? []).map((b: any) => String(b.class_id)))
       );
 
+      const attendedClassIds = Array.from(
+        new Set((attendanceData ?? []).map((r: any) => String(r.attended_class_id)).filter(Boolean))
+      );
+
+      const allClassIds = Array.from(new Set([...classIds, ...attendedClassIds]));
+
       let classMap: Record<string, any> = {};
 
-      if (classIds.length > 0) {
+      if (allClassIds.length > 0) {
         const { data: classesData, error: classesError } = await supabase
           .from('classes')
           .select('id, name, age_group, day, time, duration, level');
@@ -73,11 +103,36 @@ export default function ProgressScreen() {
     fetchProgressData();
   }, [isAuthenticated, user?.id]);
 
+  const safeDate = (dateString: string) => {
+    if (!dateString) return new Date();
+    return new Date(`${dateString}T12:00:00`);
+  };
+
+  const isPastSession = (dateString: string) => {
+    if (!dateString) return false;
+
+    const sessionDate = safeDate(dateString);
+    const today = new Date();
+
+    sessionDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    return sessionDate.getTime() < today.getTime();
+  };
+
   const getChildBookings = (childId: string) => {
     return bookings.filter((booking) => String(booking.child_id) === String(childId));
   };
 
-  const getEnrolledClasses = (childBookings: any[]) => {
+  const getChildAttendanceRecords = (childId: string) => {
+    return attendanceRecords.filter(
+      (record) =>
+        String(record.child_id) === String(childId) &&
+        record.status === 'present'
+    );
+  };
+
+  const getEnrolledClasses = (childBookings: any[], childAttendanceRecords: any[]) => {
     const map = new Map<string, any>();
 
     childBookings.forEach((booking) => {
@@ -92,6 +147,25 @@ export default function ProgressScreen() {
           time: cls.time,
           duration: cls.duration,
           level: cls.level,
+          source: 'booking',
+        });
+      }
+    });
+
+    childAttendanceRecords.forEach((record) => {
+      const classId = record.attended_class_id;
+      const cls = classesMap[String(classId)];
+
+      if (cls && !map.has(String(cls.id))) {
+        map.set(String(cls.id), {
+          id: cls.id,
+          name: cls.name,
+          ageGroup: cls.age_group,
+          day: cls.day,
+          time: cls.time,
+          duration: cls.duration,
+          level: cls.level,
+          source: 'makeup',
         });
       }
     });
@@ -99,14 +173,54 @@ export default function ProgressScreen() {
     return Array.from(map.values());
   };
 
-  const getAttendancePercentage = (childBookings: any[]) => {
-    const marked = childBookings.filter((booking) => booking.attended !== null);
+  const getProgressData = (
+    childBookings: any[],
+    childAttendanceRecords: any[]
+  ): ProgressData => {
+    const activeBookings = childBookings.filter(
+      (booking) => booking.status !== 'cancelled'
+    );
 
-    if (marked.length === 0) return 0;
+    const totalSessions = activeBookings.length;
 
-    const present = marked.filter((booking) => booking.attended === true).length;
+    const regularCompleted = activeBookings.filter(
+      (booking) => booking.attended === true
+    ).length;
 
-    return Math.round((present / marked.length) * 100);
+    const makeupSessions = childAttendanceRecords.filter(
+      (record) => record.attendance_type === 'makeup' || record.attendance_type === 'manual'
+    ).length;
+
+    const completedSessions = regularCompleted + makeupSessions;
+
+    const expiredSessions = activeBookings.filter(
+      (booking) =>
+        booking.attended !== true &&
+        booking.status !== 'cancelled' &&
+        isPastSession(booking.booking_date)
+    ).length;
+
+    const remainingSessions = Math.max(totalSessions - completedSessions - expiredSessions, 0);
+    const usableSessions = Math.max(totalSessions - expiredSessions, 0);
+
+    const percentage =
+      totalSessions === 0
+        ? 0
+        : Math.min(Math.round((completedSessions / totalSessions) * 100), 100);
+
+    return {
+      percentage,
+      completedSessions,
+      totalSessions,
+      remainingSessions,
+      expiredSessions,
+      makeupSessions,
+      usableSessions,
+    };
+  };
+
+  const getProgressBarWidth = (percentage: number) => {
+    return `${Math.min(Math.max(percentage, 0), 100)}%` as `${number}%`;
   };
 
   if (!isAuthenticated || !user) {
@@ -151,8 +265,9 @@ export default function ProgressScreen() {
       ) : (
         children.map((child: any) => {
           const childBookings = getChildBookings(child.id);
-          const enrolledClasses = getEnrolledClasses(childBookings);
-          const attendance = getAttendancePercentage(childBookings);
+          const childAttendanceRecords = getChildAttendanceRecords(child.id);
+          const progress = getProgressData(childBookings, childAttendanceRecords);
+          const enrolledClasses = getEnrolledClasses(childBookings, childAttendanceRecords);
 
           return (
             <View key={child.id} style={styles.studentSection}>
@@ -188,9 +303,30 @@ export default function ProgressScreen() {
                   <View style={styles.statDivider} />
 
                   <View style={styles.statItem}>
-                    <Text style={styles.statValue}>{attendance}%</Text>
-                    <Text style={styles.statLabel}>Attendance</Text>
+                    <Text style={styles.statValue}>{progress.percentage}%</Text>
+                    <Text style={styles.statLabel}>Progress</Text>
                   </View>
+                </View>
+
+                <View style={styles.progressSummary}>
+                  <View style={styles.progressBarTrack}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        { width: getProgressBarWidth(progress.percentage) },
+                      ]}
+                    />
+                  </View>
+
+                  <Text style={styles.progressSummaryMain}>
+                    {progress.completedSessions} / {progress.totalSessions} sessions completed
+                  </Text>
+
+                  <Text style={styles.progressSummarySub}>
+                    {progress.remainingSessions} remaining
+                    {progress.expiredSessions > 0 ? ` • ${progress.expiredSessions} expired` : ''}
+                    {progress.makeupSessions > 0 ? ` • ${progress.makeupSessions} make-up used` : ''}
+                  </Text>
                 </View>
               </LinearGradient>
 
@@ -225,6 +361,52 @@ export default function ProgressScreen() {
                       </View>
                     </View>
                   ))
+                )}
+              </View>
+
+              <View style={styles.sectionContent}>
+                <View style={styles.sectionHeader}>
+                  <Clock color={Colors.primary} size={20} />
+                  <Text style={styles.sectionTitle}>Session Usage</Text>
+                </View>
+
+                <View style={styles.usageGrid}>
+                  <View style={styles.usageCard}>
+                    <CheckCircle2 color={Colors.success} size={20} />
+                    <Text style={styles.usageNumber}>{progress.completedSessions}</Text>
+                    <Text style={styles.usageLabel}>Completed</Text>
+                  </View>
+
+                  <View style={styles.usageCard}>
+                    <Calendar color={Colors.primary} size={20} />
+                    <Text style={styles.usageNumber}>{progress.remainingSessions}</Text>
+                    <Text style={styles.usageLabel}>Remaining</Text>
+                  </View>
+
+                  <View style={styles.usageCard}>
+                    <AlertCircle color={Colors.danger} size={20} />
+                    <Text style={styles.usageNumber}>{progress.expiredSessions}</Text>
+                    <Text style={styles.usageLabel}>Expired</Text>
+                  </View>
+                </View>
+
+                {progress.makeupSessions > 0 && (
+                  <View style={styles.makeupNotice}>
+                    <Text style={styles.makeupNoticeTitle}>Make-up sessions included</Text>
+                    <Text style={styles.makeupNoticeText}>
+                      {progress.makeupSessions} make-up/manual attendance record
+                      {progress.makeupSessions === 1 ? '' : 's'} deducted from the total package usage.
+                    </Text>
+                  </View>
+                )}
+
+                {progress.expiredSessions > 0 && (
+                  <View style={styles.expiredNotice}>
+                    <Text style={styles.expiredNoticeTitle}>Expired sessions</Text>
+                    <Text style={styles.expiredNoticeText}>
+                      Past sessions that were not marked present are counted as expired and are no longer remaining.
+                    </Text>
+                  </View>
                 )}
               </View>
             </View>
@@ -382,10 +564,39 @@ const styles = StyleSheet.create({
     height: 40,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
+  progressSummary: {
+    marginTop: 18,
+  },
+  progressBarTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    overflow: 'hidden' as const,
+    marginBottom: 10,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: Colors.gold,
+  },
+  progressSummaryMain: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    textAlign: 'center',
+  },
+  progressSummarySub: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '600' as const,
+    textAlign: 'center',
+    marginTop: 4,
+  },
   sectionContent: {
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
+    marginBottom: 14,
     overflow: 'hidden' as const,
     position: 'relative' as const,
   },
@@ -465,5 +676,62 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f5e9',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  usageGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  usageCard: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+  },
+  usageNumber: {
+    fontSize: 20,
+    fontWeight: 'bold' as const,
+    color: Colors.text,
+    marginTop: 6,
+  },
+  usageLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  makeupNotice: {
+    marginTop: 14,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    padding: 12,
+  },
+  makeupNoticeTitle: {
+    fontSize: 14,
+    fontWeight: 'bold' as const,
+    color: Colors.success,
+    marginBottom: 4,
+  },
+  makeupNoticeText: {
+    fontSize: 12,
+    color: Colors.text,
+    lineHeight: 18,
+  },
+  expiredNotice: {
+    marginTop: 10,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 12,
+    padding: 12,
+  },
+  expiredNoticeTitle: {
+    fontSize: 14,
+    fontWeight: 'bold' as const,
+    color: Colors.danger,
+    marginBottom: 4,
+  },
+  expiredNoticeText: {
+    fontSize: 12,
+    color: Colors.text,
+    lineHeight: 18,
   },
 });
