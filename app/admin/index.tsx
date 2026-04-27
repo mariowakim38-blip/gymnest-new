@@ -8,9 +8,11 @@ import {
   TextInput,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { Stack, useRouter } from 'expo-router';
 import { Users, Calendar, Trash2, Edit2, X, ClipboardCheck, Check, Search, Megaphone, Image as ImageIcon, UserCheck, Plus, Book, CalendarDays, LogOut } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -48,6 +50,7 @@ export default function AdminPanel() {
   const [showGalleryModal, setShowGalleryModal] = useState<boolean>(false);
   const [editingGalleryItem, setEditingGalleryItem] = useState<any>(null);
   const [galleryForm, setGalleryForm] = useState({ url: '', caption: '' });
+  const [galleryUploading, setGalleryUploading] = useState<boolean>(false);
   
   const [showCoachModal, setShowCoachModal] = useState<boolean>(false);
   const [editingCoach, setEditingCoach] = useState<any>(null);
@@ -681,8 +684,64 @@ export default function AdminPanel() {
     setShowGalleryModal(true);
   };
 
+  const handlePickGalleryImage = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        const msg = 'Please allow photo library access to upload gallery images.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Permission needed', msg);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      setGalleryUploading(true);
+
+      const asset = result.assets[0];
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const fallbackExt = asset.mimeType?.split('/')[1] || 'jpg';
+      const fileExt = asset.fileName?.split('.').pop() || fallbackExt;
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+      const filePath = `gallery/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('gallery')
+        .upload(filePath, blob, {
+          contentType: asset.mimeType || 'image/jpeg',
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('gallery').getPublicUrl(filePath);
+      setGalleryForm((prev) => ({ ...prev, url: data.publicUrl }));
+    } catch (error) {
+      console.error('Gallery upload error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to upload image.';
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Upload Error', errorMessage);
+    } finally {
+      setGalleryUploading(false);
+    }
+  };
+
   const handleSaveGallery = async () => {
     try {
+      if (!galleryForm.url.trim()) {
+        const msg = 'Please upload an image before saving.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Missing image', msg);
+        return;
+      }
+
       if (editingGalleryItem) {
         await updateGalleryMutation.mutateAsync({ id: editingGalleryItem.id, ...galleryForm });
       } else {
@@ -1323,8 +1382,11 @@ export default function AdminPanel() {
               <View key={item.id} style={styles.card}>
                 <View style={styles.cardHeader}>
                   <View style={styles.galleryInfo}>
-                    <Text style={styles.galleryUrl} numberOfLines={1}>{item.url}</Text>
-                    <Text style={styles.galleryCaption}>{item.caption}</Text>
+                    {!!item.url && <Image source={{ uri: item.url }} style={styles.galleryThumb} resizeMode="cover" />}
+                    <View style={styles.galleryTextWrap}>
+                      <Text style={styles.galleryUrl} numberOfLines={1}>{item.url}</Text>
+                      <Text style={styles.galleryCaption}>{item.caption}</Text>
+                    </View>
                   </View>
                   <View style={styles.cardActions}>
                     <TouchableOpacity style={styles.iconButton} onPress={() => handleEditGallery(item)}>
@@ -2033,16 +2095,32 @@ export default function AdminPanel() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.form}>
-              <Text style={styles.label}>Image URL</Text>
-              <TextInput style={styles.input} value={galleryForm.url} onChangeText={(text) => setGalleryForm({ ...galleryForm, url: text })} />
+              <Text style={styles.label}>Image</Text>
+              <TouchableOpacity
+                style={[styles.uploadImageButton, galleryUploading && styles.uploadImageButtonDisabled]}
+                onPress={handlePickGalleryImage}
+                disabled={galleryUploading}
+                activeOpacity={0.85}
+              >
+                <ImageIcon color={Colors.white} size={18} />
+                <Text style={styles.uploadImageButtonText}>{galleryUploading ? 'Uploading...' : 'Upload Photo'}</Text>
+              </TouchableOpacity>
+
+              {!!galleryForm.url && (
+                <View style={styles.galleryPreviewBox}>
+                  <Image source={{ uri: galleryForm.url }} style={styles.galleryPreviewImage} resizeMode="cover" />
+                  <Text style={styles.galleryPreviewText} numberOfLines={1}>Image uploaded</Text>
+                </View>
+              )}
+
               <Text style={styles.label}>Caption</Text>
               <TextInput style={styles.input} value={galleryForm.caption} onChangeText={(text) => setGalleryForm({ ...galleryForm, caption: text })} />
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={() => setShowGalleryModal(false)}>
                   <Text style={styles.buttonSecondaryText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.button, styles.buttonPrimary]} onPress={handleSaveGallery}>
-                  <Text style={styles.buttonPrimaryText}>Save</Text>
+                <TouchableOpacity style={[styles.button, styles.buttonPrimary, galleryUploading && styles.buttonDisabled]} onPress={handleSaveGallery} disabled={galleryUploading}>
+                  <Text style={styles.buttonPrimaryText}>{galleryUploading ? 'Uploading...' : 'Save'}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -2489,6 +2567,18 @@ const styles = StyleSheet.create({
   },
   galleryInfo: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  galleryThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: '#F1F4F8',
+    marginRight: 12,
+  },
+  galleryTextWrap: {
+    flex: 1,
   },
   galleryUrl: {
     fontSize: 13,
@@ -2498,6 +2588,42 @@ const styles = StyleSheet.create({
   galleryCaption: {
     fontSize: 13,
     color: Colors.mediumGray,
+  },
+  uploadImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  uploadImageButtonDisabled: {
+    opacity: 0.6,
+  },
+  uploadImageButtonText: {
+    color: Colors.white,
+    fontWeight: 'bold' as const,
+    marginLeft: 8,
+  },
+  galleryPreviewBox: {
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  galleryPreviewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#F1F4F8',
+  },
+  galleryPreviewText: {
+    marginTop: 8,
+    color: Colors.mediumGray,
+    fontSize: 13,
   },
   coachInfo: {
     flex: 1,
