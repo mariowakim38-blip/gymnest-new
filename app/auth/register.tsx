@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 
-const LOGO_URL = 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/v3zrj7cyl4nnc13f8gqyb';
+const LOGO = require('../../assets/images/logo.png');
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -149,7 +149,7 @@ export default function RegisterScreen() {
 
           <View style={styles.logoShell}>
             <View style={styles.logoRing}>
-              <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
+              <Image source={LOGO} style={styles.logo} resizeMode="cover" />
             </View>
           </View>
 
@@ -391,6 +391,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: 'rgba(212, 175, 55, 0.8)',
+    overflow: 'hidden',
   },
   logo: {
     width: 90,
