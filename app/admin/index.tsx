@@ -515,7 +515,7 @@ export default function AdminPanel() {
   };
 
   const handleAddMakeupStudent = async () => {
-    if (!selectedMakeupChild || !selectedAttendanceClass || !selectedAttendanceDate) {
+    if (!selectedMakeupChild || !selectedAttendanceClassForDay || !selectedAttendanceDate) {
       const msg = 'Select a student before adding make-up attendance.';
       if (Platform.OS === 'web') alert(msg);
       else Alert.alert('Missing student', msg);
@@ -527,7 +527,7 @@ export default function AdminPanel() {
       .insert({
         profile_id: selectedMakeupChild.profile_id,
         child_id: selectedMakeupChild.id,
-        attended_class_id: selectedAttendanceClass.classId,
+        attended_class_id: selectedAttendanceClassForDay.id,
         attended_date: selectedAttendanceDate,
         attendance_type: 'makeup',
         status: 'present',
@@ -1199,13 +1199,13 @@ export default function AdminPanel() {
     : null;
 
   const selectedAttendanceClassMakeupRecords =
-    selectedAttendanceClass && selectedAttendanceDate
+    selectedAttendanceClassForDay && selectedAttendanceDate
       ? attendanceRecords.filter(
           (record: any) =>
             record.attendance_type === 'makeup' &&
             record.status !== 'deleted' &&
             record.attended_date === selectedAttendanceDate &&
-            String(record.attended_class_id) === String(selectedAttendanceClass.classId)
+            String(record.attended_class_id) === String(selectedAttendanceClassForDay.id)
         )
       : [];
 
@@ -1887,6 +1887,15 @@ export default function AdminPanel() {
                     <Text style={styles.attendanceClassName}>{selectedAttendanceClassForDay.name} - {selectedAttendanceClassForDay.age_group || selectedAttendanceClassForDay.ageGroup || ''}</Text>
                     <Text style={styles.attendanceClassTime}>{selectedAttendanceClassForDay.time || 'No time'}{selectedAttendanceClassForDay.duration ? ` • ${selectedAttendanceClassForDay.duration}` : ''}</Text>
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.makeupAddButton}
+                    onPress={handleOpenMakeupModal}
+                    activeOpacity={0.85}
+                  >
+                    <Plus color={Colors.white} size={16} />
+                    <Text style={styles.makeupAddButtonText}>Add Make-Up Student</Text>
+                  </TouchableOpacity>
                 </View>
 
                 {getBookingsForClassOnDate(selectedAttendanceClassForDay, selectedAttendanceDate)
@@ -1936,7 +1945,38 @@ export default function AdminPanel() {
                     );
                   })}
 
-                {getBookingsForClassOnDate(selectedAttendanceClassForDay, selectedAttendanceDate).length === 0 && (
+                {selectedAttendanceClassMakeupRecords.map((record: any) => {
+                  const parent = allUsers.find((u: any) => String(u.id) === String(record.profile_id));
+                  const child = parent?.children?.find((c: any) => String(c.id) === String(record.child_id));
+
+                  return (
+                    <View key={record.id} style={[styles.attendanceStudentCard, styles.makeupStudentCard]}>
+                      <View style={styles.attendanceStudentInfo}>
+                        <Text style={styles.attendanceName}>{child?.name || 'Unknown make-up student'}</Text>
+                        <Text style={styles.attendanceParent}>Parent: {parent?.name || 'Unknown parent'}</Text>
+                        {!!parent?.phoneNumber && <Text style={styles.attendanceStatus}>Phone: {parent.phoneNumber}</Text>}
+                        <Text style={styles.attendanceStatus}>Status: Present • Make-up</Text>
+                        {!!record.note && <Text style={styles.makeupNoteText}>Note: {record.note}</Text>}
+                      </View>
+
+                      <View style={styles.attendanceActions}>
+                        <View style={[styles.attendancePresentButton, styles.attendanceButtonActive]}>
+                          <Text style={styles.attendanceButtonTextActive}>Present</Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.attendanceAbsentButton}
+                          onPress={() => handleDeleteMakeupRecord(record.id)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.attendanceAbsentText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {getBookingsForClassOnDate(selectedAttendanceClassForDay, selectedAttendanceDate).length === 0 && selectedAttendanceClassMakeupRecords.length === 0 && (
                   <Text style={styles.emptyStateText}>No active/enrolled kids in this class for this date.</Text>
                 )}
               </View>
@@ -2156,7 +2196,7 @@ export default function AdminPanel() {
         </View>
       )}
 
-      {showMakeupModal && selectedAttendanceClass && (
+      {showMakeupModal && selectedAttendanceClassForDay && (
         <View style={styles.modal}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -2169,7 +2209,7 @@ export default function AdminPanel() {
             <ScrollView style={styles.form}>
               <Text style={styles.label}>Class</Text>
               <Text style={styles.makeupContextText}>
-                {selectedAttendanceClass.className} • {formatAttendanceDate(selectedAttendanceDate)}
+                {selectedAttendanceClassForDay.name} - {selectedAttendanceClassForDay.age_group || selectedAttendanceClassForDay.ageGroup || ''} • {formatAttendanceDate(selectedAttendanceDate)}
               </Text>
 
               <Text style={styles.label}>Search Student or Parent</Text>
