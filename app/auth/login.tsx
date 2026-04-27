@@ -12,10 +12,12 @@ import {
   Image,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
-import { Mail, Lock } from 'lucide-react-native';
+import { Mail, Lock, ShieldCheck } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+
+const LOGO_URL = 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/v3zrj7cyl4nnc13f8gqyb';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -33,7 +35,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const result = await login(email, password);
-      
+
       if (result.success) {
         const destination = result.user?.role === 'admin' ? '/admin' : '/(tabs)/(home)';
         console.log('Login successful, navigating to:', destination);
@@ -56,80 +58,96 @@ export default function LoginScreen() {
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <LinearGradient
-          colors={[Colors.primary, '#2a3f5f']}
-          style={styles.header}
+          colors={[Colors.primary, '#18324f', '#0b1728']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
         >
-          <View style={styles.logoContainer}>
-            <Image
-              source={{ uri: 'https://pub-e001eb4506b145aa938b5d3badbff6a5.r2.dev/attachments/v3zrj7cyl4nnc13f8gqyb' }}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+          <View style={styles.heroGlow} />
+
+          <View style={styles.logoShell}>
+            <View style={styles.logoRing}>
+              <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
+            </View>
           </View>
+
+          <View style={styles.badge}>
+            <ShieldCheck color={Colors.gold} size={15} />
+            <Text style={styles.badgeText}>Secure Member Access</Text>
+          </View>
+
           <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Log in to your Gymnest account</Text>
+          <Text style={styles.subtitle}>Sign in to manage your Gymnest account.</Text>
         </LinearGradient>
 
-        <View style={styles.formContainer}>
-          <View style={styles.inputContainer}>
-            <Mail color={Colors.mediumGray} size={20} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholderTextColor={Colors.mediumGray}
-            />
-          </View>
+        <View style={styles.formWrap}>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Log In</Text>
+            <Text style={styles.cardSubtitle}>Enter your details to continue.</Text>
 
-          <View style={styles.inputContainer}>
-            <Lock color={Colors.mediumGray} size={20} />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              placeholderTextColor={Colors.mediumGray}
-            />
-          </View>
+            <View style={styles.inputContainer}>
+              <View style={styles.iconBox}>
+                <Mail color={Colors.primary} size={19} />
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Email address"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholderTextColor={Colors.mediumGray}
+              />
+            </View>
 
-          <TouchableOpacity
-            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-            onPress={handleLogin}
-            disabled={isLoading}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={[Colors.gold, '#c49b2e']}
-              style={styles.loginButtonGradient}
+            <View style={styles.inputContainer}>
+              <View style={styles.iconBox}>
+                <Lock color={Colors.primary} size={19} />
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholderTextColor={Colors.mediumGray}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginButton, isLoading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={isLoading}
+              activeOpacity={0.86}
             >
-              <Text style={styles.loginButtonText}>
-                {isLoading ? 'Logging in...' : 'Log In'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[Colors.gold, '#d6ad45', '#b98a1f']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.loginButtonGradient}
+              >
+                <Text style={styles.loginButtonText}>{isLoading ? 'Logging in...' : 'Log In'}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>NEW TO GYMNEST?</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.registerButton}
+              onPress={() => router.push('/auth/register' as Href)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.registerButtonText}>Create Parent Account</Text>
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={styles.registerLink}
-            onPress={() => router.push('/auth/register' as Href)}
-          >
-            <Text style={styles.registerLinkText}>
-              Don&apos;t have an account?{' '}
-              <Text style={styles.registerLinkTextBold}>Sign Up</Text>
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -139,105 +157,186 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#f4f6fb',
   },
   scrollContent: {
     flexGrow: 1,
   },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 40,
-    paddingHorizontal: 20,
+  hero: {
+    minHeight: 330,
+    paddingTop: 66,
+    paddingHorizontal: 24,
+    paddingBottom: 72,
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  logoContainer: {
-    marginBottom: 20,
+  heroGlow: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    top: -70,
+    right: -80,
+  },
+  logoShell: {
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  logoRing: {
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(212, 175, 55, 0.8)',
   },
   logo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginBottom: 14,
+  },
+  badgeText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 7,
+    letterSpacing: 0.3,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold' as const,
+    fontSize: 34,
+    fontWeight: '800',
     color: Colors.white,
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: Colors.gold,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.82)',
+    textAlign: 'center',
+    lineHeight: 22,
   },
-  formContainer: {
-    flex: 1,
-    padding: 24,
+  formWrap: {
+    paddingHorizontal: 20,
+    marginTop: -48,
+    paddingBottom: 34,
+  },
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: 28,
+    padding: 22,
+    shadowColor: '#0b1728',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.14,
+    shadowRadius: 28,
+    elevation: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.06)',
+  },
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: Colors.textLight,
+    marginBottom: 20,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: '#f7f9fc',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e8edf5',
+  },
+  iconBox: {
+    width: 34,
+    height: 34,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(28, 98, 161, 0.09)',
   },
   input: {
     flex: 1,
     marginLeft: 12,
     fontSize: 16,
     color: Colors.text,
+    paddingVertical: 0,
   },
   loginButton: {
-    borderRadius: 25,
+    borderRadius: 18,
     overflow: 'hidden',
-    marginTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    marginTop: 6,
+    shadowColor: Colors.gold,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 7,
   },
-  loginButtonDisabled: {
-    opacity: 0.6,
+  buttonDisabled: {
+    opacity: 0.65,
   },
   loginButtonGradient: {
-    paddingVertical: 16,
+    paddingVertical: 17,
     alignItems: 'center',
   },
   loginButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold' as const,
+    fontSize: 17,
+    fontWeight: '800',
     color: Colors.white,
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: 22,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: '#e7ecf3',
   },
   dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
+    marginHorizontal: 12,
+    fontSize: 11,
+    fontWeight: '800',
     color: Colors.textLight,
+    letterSpacing: 0.8,
   },
-  registerLink: {
+  registerButton: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.45)',
+    backgroundColor: 'rgba(212, 175, 55, 0.08)',
+    paddingVertical: 15,
     alignItems: 'center',
   },
-  registerLinkText: {
-    fontSize: 16,
-    color: Colors.text,
-  },
-  registerLinkTextBold: {
-    fontWeight: 'bold' as const,
-    color: Colors.gold,
+  registerButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.primary,
   },
 });
