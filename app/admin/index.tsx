@@ -32,6 +32,18 @@ export default function AdminPanel() {
   const [selectedClassDate, setSelectedClassDate] = useState<string>('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', phoneNumber: '' });
+  const [showCreateUserModal, setShowCreateUserModal] = useState<boolean>(false);
+  const [createUserLoading, setCreateUserLoading] = useState<boolean>(false);
+  const [createUserForm, setCreateUserForm] = useState({
+    parentFirstName: '',
+    parentLastName: '',
+    username: '',
+    email: '',
+    phoneNumber: '',
+    password: '',
+    childFirstName: '',
+    childAge: '',
+  });
   const [searchDate, setSearchDate] = useState<string>('');
   const [attendanceDateFilter, setAttendanceDateFilter] = useState<string>('');
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>('');
@@ -359,6 +371,7 @@ export default function AdminPanel() {
 
   const updateUserMutation = trpc.users.update.useMutation({ onSuccess: () => refreshUsers() });
   const deleteUserMutation = trpc.users.delete.useMutation({ onSuccess: () => refreshUsers() });
+  const createParentAccountMutation = trpc.admin.createParentAccount.useMutation({ onSuccess: () => refreshUsers() });
   const cancelBookingMutation = trpc.bookings.cancel.useMutation({ onSuccess: () => refreshBookings() });
   const markAttendanceMutation = trpc.bookings.markAttendance.useMutation({ onSuccess: () => refreshBookings() });
   
@@ -406,6 +419,87 @@ export default function AdminPanel() {
     if (!editingUser) return;
     await updateUserMutation.mutateAsync({ id: editingUser.id, name: editForm.name, phoneNumber: editForm.phoneNumber });
     setEditingUser(null);
+  };
+
+  const resetCreateUserForm = () => {
+    setCreateUserForm({
+      parentFirstName: '',
+      parentLastName: '',
+      username: '',
+      email: '',
+      phoneNumber: '',
+      password: '',
+      childFirstName: '',
+      childAge: '',
+    });
+  };
+
+  const handleOpenCreateUserModal = () => {
+    resetCreateUserForm();
+    setShowCreateUserModal(true);
+  };
+
+  const handleCreateParentAccount = async () => {
+    const parentFirstName = createUserForm.parentFirstName.trim();
+    const parentLastName = createUserForm.parentLastName.trim();
+    const username = createUserForm.username.trim();
+    const email = createUserForm.email.trim();
+    const phoneNumber = createUserForm.phoneNumber.trim();
+    const password = createUserForm.password;
+    const childFirstName = createUserForm.childFirstName.trim();
+    const childAge = Number(createUserForm.childAge);
+
+    if (!parentFirstName || !parentLastName || !username || !email || !phoneNumber || !password || !childFirstName || !createUserForm.childAge.trim()) {
+      const msg = 'Parent name, username, email, phone, password, child name, and child age are required.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Missing information', msg);
+      return;
+    }
+
+    if (password.length < 6) {
+      const msg = 'Password must be at least 6 characters.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Invalid password', msg);
+      return;
+    }
+
+    if (!Number.isFinite(childAge) || childAge < 1 || childAge > 18) {
+      const msg = 'Child age must be between 1 and 18.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Invalid age', msg);
+      return;
+    }
+
+    const parentFullName = `${parentFirstName} ${parentLastName}`.trim();
+    const childFullName = `${childFirstName} ${parentLastName}`.trim();
+    const cleanPhone = phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`;
+
+    setCreateUserLoading(true);
+    try {
+      await createParentAccountMutation.mutateAsync({
+        email,
+        password,
+        name: parentFullName,
+        username,
+        phoneNumber: cleanPhone,
+        childName: childFullName,
+        childAge,
+      });
+
+      await refreshUsers();
+      setShowCreateUserModal(false);
+      resetCreateUserForm();
+      const msg = 'Parent account created successfully.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Success', msg);
+    } catch (error) {
+      console.error('Failed to create parent account:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create parent account.';
+      if (Platform.OS === 'web') alert(errorMessage);
+      else Alert.alert('Error', errorMessage);
+    } finally {
+      setCreateUserLoading(false);
+    }
   };
 
   const handleCancelBooking = (bookingId: string) => {
@@ -1124,6 +1218,31 @@ export default function AdminPanel() {
     return parent?.children?.find((child: any) => String(child.id) === String(booking.childId));
   };
 
+  const getFamilyNameFromParent = (parentName: string) => {
+    const parts = String(parentName || '').trim().split(/\s+/).filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+
+  const getUserDisplayName = (u: any) => {
+    const firstChild = u?.children?.[0];
+    if (!firstChild?.name) return u?.name || 'Unnamed student';
+
+    const childName = String(firstChild.name).trim();
+    const familyName = getFamilyNameFromParent(u?.name || '');
+
+    if (!familyName || childName.toLowerCase().includes(familyName.toLowerCase())) {
+      return childName;
+    }
+
+    return `${childName} ${familyName}`.trim();
+  };
+
+  const getChildrenSummary = (u: any) => {
+    const children = u?.children || [];
+    if (children.length === 0) return 'No children added';
+    return children.map((child: any) => `${child.name}${child.age ? ` (${child.age})` : ''}`).join(', ');
+  };
+
   const getUniqueStudentCount = (items: any[]) => {
     return new Set(items.map((booking: any) => `${booking.profileId || ''}::${booking.childId || ''}`)).size;
   };
@@ -1562,7 +1681,16 @@ export default function AdminPanel() {
 
         {activeTab === 'users' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>All Users</Text>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Students / Accounts</Text>
+                <Text style={styles.attendanceSubtitle}>Accounts are displayed by child name first, with parent details underneath.</Text>
+              </View>
+              <TouchableOpacity style={styles.addButton} onPress={handleOpenCreateUserModal} activeOpacity={0.85}>
+                <Plus color={Colors.white} size={20} />
+              </TouchableOpacity>
+            </View>
+
             {usersLoading ? (
               <Text style={styles.emptyStateText}>Loading...</Text>
             ) : allUsers.length === 0 ? (
@@ -1572,9 +1700,12 @@ export default function AdminPanel() {
                 <View key={u.id} style={styles.card}>
                   <View style={styles.cardHeader}>
                     <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{u.name}</Text>
+                      <Text style={styles.userName}>{getUserDisplayName(u)}</Text>
                       <Text style={styles.userRole}>{u.role}</Text>
-                      <Text style={styles.userDetail}>{u.email}</Text>
+                      <Text style={styles.userDetail}>Parent: {u.name}</Text>
+                      <Text style={styles.userDetail}>Children: {getChildrenSummary(u)}</Text>
+                      {!!u.email && <Text style={styles.userDetail}>{u.email}</Text>}
+                      {!!u.phoneNumber && <Text style={styles.userDetail}>{u.phoneNumber}</Text>}
                     </View>
                     <View style={styles.cardActions}>
                       <TouchableOpacity style={styles.iconButton} onPress={() => handleEditUser(u)}>
@@ -2394,6 +2525,104 @@ export default function AdminPanel() {
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.button, styles.buttonPrimary]} onPress={handleSaveBooking}>
                   <Text style={styles.buttonPrimaryText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {showCreateUserModal && (
+        <View style={styles.modal}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Parent Account</Text>
+              <TouchableOpacity onPress={() => setShowCreateUserModal(false)}>
+                <X color={Colors.darkGray} size={24} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.form}>
+              <Text style={styles.label}>Parent First Name</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.parentFirstName}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, parentFirstName: text })}
+                placeholder="Example: Sherwin"
+              />
+
+              <Text style={styles.label}>Parent Family Name</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.parentLastName}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, parentLastName: text })}
+                placeholder="Example: Wakim"
+              />
+
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.username}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, username: text })}
+                autoCapitalize="none"
+                placeholder="Example: sherwin_wakim"
+              />
+
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.email}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, email: text })}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="parent@email.com"
+              />
+
+              <Text style={styles.label}>Phone Number</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.phoneNumber}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, phoneNumber: text })}
+                keyboardType="phone-pad"
+                placeholder="70123456 or +96170123456"
+              />
+
+              <Text style={styles.label}>Temporary Password</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.password}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, password: text })}
+                secureTextEntry
+                placeholder="Minimum 6 characters"
+              />
+
+              <Text style={styles.label}>Child First Name</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.childFirstName}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, childFirstName: text })}
+                placeholder="Example: Geo"
+              />
+
+              <Text style={styles.label}>Child Age</Text>
+              <TextInput
+                style={styles.input}
+                value={createUserForm.childAge}
+                onChangeText={(text) => setCreateUserForm({ ...createUserForm, childAge: text })}
+                keyboardType="number-pad"
+                placeholder="Example: 7"
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={() => setShowCreateUserModal(false)}>
+                  <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonPrimary, createUserLoading && styles.buttonDisabled]}
+                  onPress={handleCreateParentAccount}
+                  disabled={createUserLoading}
+                >
+                  <Text style={styles.buttonPrimaryText}>{createUserLoading ? 'Creating...' : 'Create Account'}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
