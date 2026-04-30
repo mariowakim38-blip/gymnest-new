@@ -1,52 +1,71 @@
 import { z } from 'zod';
-import { publicProcedure, router } from './trpc';
-import { supabaseAdmin } from '../supabaseAdmin'; // service role client
+import { createTRPCRouter, publicProcedure } from '../create-context';
+import { supabaseAdmin } from '../../supabaseAdmin';
 
-export const adminRouter = router({
-  createUser: publicProcedure
+export const adminRouter = createTRPCRouter({
+  createParentAccount: publicProcedure
     .input(
       z.object({
-        email: z.string(),
-        password: z.string(),
-        name: z.string(),
-        username: z.string(),
-        phone: z.string(),
-        childName: z.string(),
-        childAge: z.number(),
+        email: z.string().email(),
+        password: z.string().min(6),
+        name: z.string().min(1),
+        username: z.string().min(1),
+        phoneNumber: z.string().min(1),
+        childName: z.string().min(1),
+        childAge: z.number().min(1).max(18),
       })
     )
     .mutation(async ({ input }) => {
-      // 1. Create auth user
-      const { data, error } = await supabaseAdmin.auth.admin.createUser({
-        email: input.email,
-        password: input.password,
-        email_confirm: true,
-      });
+      const cleanPhone = input.phoneNumber.startsWith('+961')
+        ? input.phoneNumber
+        : `+961${input.phoneNumber}`;
 
-      if (error) throw new Error(error.message);
+      const { data: authData, error: authError } =
+        await supabaseAdmin.auth.admin.createUser({
+          email: input.email.trim(),
+          password: input.password,
+          email_confirm: true,
+        });
 
-      const userId = data.user.id;
+      if (authError) {
+        throw new Error(authError.message);
+      }
 
-      // 2. Create profile
-      const { data: profile } = await supabaseAdmin
+      if (!authData.user) {
+        throw new Error('Failed to create auth user');
+      }
+
+      const { data: profileData, error: profileError } = await supabaseAdmin
         .from('profiles')
         .insert({
-          user_id: userId,
-          name: input.name,
-          username: input.username,
-          phone_number: input.phone,
+          user_id: authData.user.id,
+          name: input.name.trim(),
+          username: input.username.trim(),
+          phone_number: cleanPhone,
           role: 'parent',
         })
         .select()
         .single();
 
-      // 3. Create child
-      await supabaseAdmin.from('children').insert({
-        profile_id: profile.id,
-        name: input.childName,
+      if (profileError) {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+        throw new Error(profileError.message);
+      }
+
+      const { error: childError } = await supabaseAdmin.from('children').insert({
+        profile_id: profileData.id,
+        name: input.childName.trim(),
         age: input.childAge,
       });
 
-      return { success: true };
+      if (childError) {
+        throw new Error(childError.message);
+      }
+
+      return {
+        success: true,
+        userId: authData.user.id,
+        profileId: profileData.id,
+      };
     }),
 });
