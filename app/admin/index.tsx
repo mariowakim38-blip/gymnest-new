@@ -494,68 +494,98 @@ export default function AdminPanel() {
     setShowCreateUserModal(true);
   };
 
-  const handleCreateParentAccount = async () => {
-    const parentFirstName = createUserForm.parentFirstName.trim();
-    const parentLastName = createUserForm.parentLastName.trim();
-    const username = createUserForm.username.trim();
-    const email = createUserForm.email.trim();
-    const phoneNumber = createUserForm.phoneNumber.trim();
-    const password = createUserForm.password;
-    const childFirstName = createUserForm.childFirstName.trim();
-    const childAge = Number(createUserForm.childAge);
+const handleCreateParentAccount = async () => {
+  const parentFirstName = createUserForm.parentFirstName.trim();
+  const parentLastName = createUserForm.parentLastName.trim();
+  const email = createUserForm.email.trim().toLowerCase();
+  const phoneNumber = createUserForm.phoneNumber.trim();
+  const password = createUserForm.password;
+  const childFirstName = createUserForm.childFirstName.trim();
+  const childAge = Number(createUserForm.childAge);
 
-    if (!parentFirstName || !parentLastName || !username || !email || !phoneNumber || !password || !childFirstName || !createUserForm.childAge.trim()) {
-      const msg = 'Parent name, username, email, phone, password, child name, and child age are required.';
+  if (!parentFirstName || !parentLastName || !email || !phoneNumber || !password || !childFirstName || !createUserForm.childAge.trim()) {
+    const msg = 'All fields are required.';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Error', msg);
+    return;
+  }
+
+  if (password.length < 6) {
+    const msg = 'Password must be at least 6 characters.';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Error', msg);
+    return;
+  }
+
+  if (!Number.isFinite(childAge) || childAge < 1 || childAge > 18) {
+    const msg = 'Child age must be between 1 and 18.';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Error', msg);
+    return;
+  }
+
+  const parentName = `${parentFirstName} ${parentLastName}`.trim();
+  const childName = `${childFirstName} ${parentLastName}`.trim();
+  const cleanPhone = phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`;
+
+  setCreateUserLoading(true);
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      const msg = 'Not authenticated';
       if (Platform.OS === 'web') alert(msg);
-      else Alert.alert('Missing information', msg);
+      else Alert.alert('Error', msg);
       return;
     }
 
-    if (password.length < 6) {
-      const msg = 'Password must be at least 6 characters.';
+    const response = await fetch(
+      'https://hnkncuqckibrowronjyq.supabase.co/functions/v1/admin-create-user',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          parentName,
+          phoneNumber: cleanPhone,
+          childName,
+          childAge,
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      const msg = result.error || 'Failed to create user';
       if (Platform.OS === 'web') alert(msg);
-      else Alert.alert('Invalid password', msg);
+      else Alert.alert('Error', msg);
       return;
     }
 
-    if (!Number.isFinite(childAge) || childAge < 1 || childAge > 18) {
-      const msg = 'Child age must be between 1 and 18.';
-      if (Platform.OS === 'web') alert(msg);
-      else Alert.alert('Invalid age', msg);
-      return;
-    }
+    await refreshUsers();
+    setShowCreateUserModal(false);
+    resetCreateUserForm();
 
-    const parentFullName = `${parentFirstName} ${parentLastName}`.trim();
-    const childFullName = `${childFirstName} ${parentLastName}`.trim();
-    const cleanPhone = phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`;
+    const msg = 'User created successfully';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Success', msg);
 
-    setCreateUserLoading(true);
-    try {
-      await createParentAccountMutation.mutateAsync({
-        email,
-        password,
-        name: parentFullName,
-        username,
-        phoneNumber: cleanPhone,
-        childName: childFullName,
-        childAge,
-      });
-
-      await refreshUsers();
-      setShowCreateUserModal(false);
-      resetCreateUserForm();
-      const msg = 'Parent account created successfully.';
-      if (Platform.OS === 'web') alert(msg);
-      else Alert.alert('Success', msg);
-    } catch (error) {
-      console.error('Failed to create parent account:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create parent account.';
-      if (Platform.OS === 'web') alert(errorMessage);
-      else Alert.alert('Error', errorMessage);
-    } finally {
-      setCreateUserLoading(false);
-    }
-  };
+  } catch (error: any) {
+    const msg = error?.message || 'Something went wrong';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Error', msg);
+  } finally {
+    setCreateUserLoading(false);
+  }
+};
 
   const handleCancelBooking = (bookingId: string) => {
     const cancelBooking = async () => {
@@ -1737,11 +1767,15 @@ export default function AdminPanel() {
         {activeTab === 'users' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Students / Accounts</Text>
-                <Text style={styles.attendanceSubtitle}>Search and tap a student to view their progress.</Text>
-              </View>
-            </View>
+  <View>
+    <Text style={styles.sectionTitle}>Students / Accounts</Text>
+    <Text style={styles.attendanceSubtitle}>Search and tap a student to view their progress.</Text>
+  </View>
+
+  <TouchableOpacity style={styles.addButton} onPress={handleOpenCreateUserModal}>
+    <Plus color={Colors.white} size={20} />
+  </TouchableOpacity>
+</View>
 
             <TextInput
               placeholder="Search child, parent, phone, or email..."
