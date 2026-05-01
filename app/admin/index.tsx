@@ -1684,11 +1684,8 @@ export default function AdminPanel() {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>Students / Accounts</Text>
-                <Text style={styles.attendanceSubtitle}>Accounts are displayed by child name first, with parent details underneath.</Text>
+                <Text style={styles.attendanceSubtitle}>Tap a student to view their progress.</Text>
               </View>
-              <TouchableOpacity style={styles.addButton} onPress={handleOpenCreateUserModal} activeOpacity={0.85}>
-                <Plus color={Colors.white} size={20} />
-              </TouchableOpacity>
             </View>
 
             {usersLoading ? (
@@ -1696,28 +1693,75 @@ export default function AdminPanel() {
             ) : allUsers.length === 0 ? (
               <Text style={styles.emptyStateText}>No users found</Text>
             ) : (
-              allUsers.map((u) => (
-                <View key={u.id} style={styles.card}>
-                  <View style={styles.cardHeader}>
-                    <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{getUserDisplayName(u)}</Text>
-                      <Text style={styles.userRole}>{u.role}</Text>
-                      <Text style={styles.userDetail}>Parent: {u.name}</Text>
-                      <Text style={styles.userDetail}>Children: {getChildrenSummary(u)}</Text>
-                      {!!u.email && <Text style={styles.userDetail}>{u.email}</Text>}
-                      {!!u.phoneNumber && <Text style={styles.userDetail}>{u.phoneNumber}</Text>}
+              allUsers
+                .flatMap((u) =>
+                  u.children && u.children.length > 0
+                    ? u.children.map((child: any) => ({ parent: u, child }))
+                    : [{ parent: u, child: null }]
+                )
+                .map(({ parent, child }: any) => (
+                  <TouchableOpacity
+                    key={child?.id || parent.id}
+                    style={styles.card}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (child?.id) {
+                        router.push({
+                          pathname: '/admin/user-progress',
+                          params: {
+                            childId: child.id,
+                            parentId: parent.id,
+                          },
+                        } as any);
+                      }
+                    }}
+                  >
+                    <View style={styles.cardHeader}>
+                      <View style={styles.userInfo}>
+                        <Text style={styles.userName}>{child?.name || parent.name}</Text>
+                        <Text style={styles.userRole}>Parent: {parent.name}</Text>
+
+                        {child?.age ? (
+                          <Text style={styles.userDetail}>Age: {child.age}</Text>
+                        ) : null}
+
+                        {!!parent.phoneNumber && (
+                          <Text style={styles.userDetail}>Phone: {parent.phoneNumber}</Text>
+                        )}
+
+                        {!!parent.email && (
+                          <Text style={styles.userDetail}>{parent.email}</Text>
+                        )}
+
+                        <Text style={styles.userDetail}>
+                          {child?.id ? 'Tap to view progress' : 'No child attached'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.cardActions}>
+                        <TouchableOpacity
+                          style={styles.iconButton}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            handleEditUser(parent);
+                          }}
+                        >
+                          <Edit2 color={Colors.primary} size={20} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.iconButton}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            handleDeleteUser(parent.id);
+                          }}
+                        >
+                          <Trash2 color={Colors.danger} size={20} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    <View style={styles.cardActions}>
-                      <TouchableOpacity style={styles.iconButton} onPress={() => handleEditUser(u)}>
-                        <Edit2 color={Colors.primary} size={20} />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.iconButton} onPress={() => handleDeleteUser(u.id)}>
-                        <Trash2 color={Colors.danger} size={20} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              ))
+                  </TouchableOpacity>
+                ))
             )}
           </View>
         )}
