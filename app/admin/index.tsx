@@ -372,7 +372,6 @@ export default function AdminPanel() {
 
   const updateUserMutation = trpc.users.update.useMutation({ onSuccess: () => refreshUsers() });
   const deleteUserMutation = trpc.users.delete.useMutation({ onSuccess: () => refreshUsers() });
-  const createParentAccountMutation = trpc.admin.createParentAccount.useMutation({ onSuccess: () => refreshUsers() });
   const cancelBookingMutation = trpc.bookings.cancel.useMutation({ onSuccess: () => refreshBookings() });
   const markAttendanceMutation = trpc.bookings.markAttendance.useMutation({ onSuccess: () => refreshBookings() });
   
@@ -497,13 +496,23 @@ export default function AdminPanel() {
 const handleCreateParentAccount = async () => {
   const parentFirstName = createUserForm.parentFirstName.trim();
   const parentLastName = createUserForm.parentLastName.trim();
+  const username = createUserForm.username.trim();
   const email = createUserForm.email.trim().toLowerCase();
   const phoneNumber = createUserForm.phoneNumber.trim();
   const password = createUserForm.password;
   const childFirstName = createUserForm.childFirstName.trim();
   const childAge = Number(createUserForm.childAge);
 
-  if (!parentFirstName || !parentLastName || !email || !phoneNumber || !password || !childFirstName || !createUserForm.childAge.trim()) {
+  if (
+    !parentFirstName ||
+    !parentLastName ||
+    !username ||
+    !email ||
+    !phoneNumber ||
+    !password ||
+    !childFirstName ||
+    !createUserForm.childAge.trim()
+  ) {
     const msg = 'All fields are required.';
     if (Platform.OS === 'web') alert(msg);
     else Alert.alert('Error', msg);
@@ -526,7 +535,9 @@ const handleCreateParentAccount = async () => {
 
   const parentName = `${parentFirstName} ${parentLastName}`.trim();
   const childName = `${childFirstName} ${parentLastName}`.trim();
-  const cleanPhone = phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`;
+  const cleanPhone = phoneNumber.startsWith('+961')
+    ? phoneNumber
+    : `+961${phoneNumber}`;
 
   setCreateUserLoading(true);
 
@@ -554,6 +565,7 @@ const handleCreateParentAccount = async () => {
           email,
           password,
           parentName,
+          username,
           phoneNumber: cleanPhone,
           childName,
           childAge,
@@ -577,7 +589,6 @@ const handleCreateParentAccount = async () => {
     const msg = 'User created successfully';
     if (Platform.OS === 'web') alert(msg);
     else Alert.alert('Success', msg);
-
   } catch (error: any) {
     const msg = error?.message || 'Something went wrong';
     if (Platform.OS === 'web') alert(msg);
