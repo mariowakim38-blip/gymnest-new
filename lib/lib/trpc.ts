@@ -1,14 +1,22 @@
 import { createTRPCReact } from "@trpc/react-query";
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { httpBatchLink } from "@trpc/client";
 import type { AppRouter } from "@/backend/trpc/app-router";
 import superjson from "superjson";
 import { supabase } from "@/lib/supabase";
 
 export const trpc = createTRPCReact<AppRouter>();
 
-const getBaseUrl = () => {
-  return "https://gymnest-new.vercel.app";
-};
+function getBaseUrl() {
+  if (typeof window !== "undefined") {
+    return "";
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  return "http://localhost:3000";
+}
 
 const getAuthHeaders = async () => {
   const { data } = await supabase.auth.getSession();
@@ -20,53 +28,31 @@ const getAuthHeaders = async () => {
   };
 };
 
-const createFetchHandler = () => {
-  return async (url: RequestInfo | URL, options?: RequestInit) => {
-    try {
-      const mergedHeaders = {
-        ...(options?.headers ?? {}),
-        ...(await getAuthHeaders()),
-      };
-
-      const response = await fetch(url, {
-        ...options,
-        headers: mergedHeaders,
-        credentials: "same-origin",
-      });
-
-      if (!response.ok) {
-        const text = await response.clone().text();
-        console.error("tRPC Error Response:", {
-          url: String(url),
-          status: response.status,
-          body: text.substring(0, 500),
-        });
-      }
-
-      return response;
-    } catch (error) {
-      console.error(
-        "tRPC Fetch Error:",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      throw error;
-    }
+const fetchHandler = async (url: RequestInfo | URL, options?: RequestInit) => {
+  const mergedHeaders = {
+    ...(options?.headers ?? {}),
+    ...(await getAuthHeaders()),
   };
+
+  const response = await fetch(url, {
+    ...options,
+    headers: mergedHeaders,
+    credentials: "same-origin",
+  });
+
+  if (!response.ok) {
+    const text = await response.clone().text();
+    console.error("tRPC Error Response:", {
+      url: String(url),
+      status: response.status,
+      body: text.substring(0, 500),
+    });
+  }
+
+  return response;
 };
 
-const fetchHandler = createFetchHandler();
-
 export const trpcReactClient = trpc.createClient({
-  links: [
-    httpBatchLink({
-      url: `${getBaseUrl()}/api/trpc`,
-      transformer: superjson,
-      fetch: fetchHandler,
-    }),
-  ],
-});
-
-export const trpcClient = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
       url: `${getBaseUrl()}/api/trpc`,
