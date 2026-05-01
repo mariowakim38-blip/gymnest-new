@@ -32,6 +32,7 @@ export default function AdminPanel() {
   const [selectedClassDate, setSelectedClassDate] = useState<string>('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', phoneNumber: '' });
+  const [userSearch, setUserSearch] = useState<string>('');
   const [showCreateUserModal, setShowCreateUserModal] = useState<boolean>(false);
   const [createUserLoading, setCreateUserLoading] = useState<boolean>(false);
   const [createUserForm, setCreateUserForm] = useState({
@@ -1684,9 +1685,16 @@ export default function AdminPanel() {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>Students / Accounts</Text>
-                <Text style={styles.attendanceSubtitle}>Tap a student to view their progress.</Text>
+                <Text style={styles.attendanceSubtitle}>Search and tap a student to view their progress.</Text>
               </View>
             </View>
+
+            <TextInput
+              placeholder="Search child, parent, phone, or email..."
+              style={styles.input}
+              value={userSearch}
+              onChangeText={setUserSearch}
+            />
 
             {usersLoading ? (
               <Text style={styles.emptyStateText}>Loading...</Text>
@@ -1699,6 +1707,18 @@ export default function AdminPanel() {
                     ? u.children.map((child: any) => ({ parent: u, child }))
                     : [{ parent: u, child: null }]
                 )
+                .filter(({ parent, child }: any) => {
+                  const search = userSearch.trim().toLowerCase();
+                  if (!search) return true;
+
+                  return (
+                    String(child?.name || '').toLowerCase().includes(search) ||
+                    String(child?.age || '').toLowerCase().includes(search) ||
+                    String(parent?.name || '').toLowerCase().includes(search) ||
+                    String(parent?.phoneNumber || '').toLowerCase().includes(search) ||
+                    String(parent?.email || '').toLowerCase().includes(search)
+                  );
+                })
                 .map(({ parent, child }: any) => (
                   <TouchableOpacity
                     key={child?.id || parent.id}
