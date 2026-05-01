@@ -420,7 +420,7 @@ export default function AdminPanel() {
       }
 
       const response = await fetch(
-        'https://hnkncuqckibrowronjyq.supabase.co/functions/v1/admin-delete-user',
+        'https://hnkncuqckibrowronjyq.supabase.co/functions/v1/clever-responder',
         {
           method: 'POST',
           headers: {
