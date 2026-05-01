@@ -398,18 +398,72 @@ export default function AdminPanel() {
     }
   }, [user, router]);
 
-  const handleDeleteUser = (userId: string) => {
-    if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to delete this user?')) {
-        deleteUserMutation.mutate({ id: userId });
+  const handleDeleteUser = async (userId: string) => {
+  if (!userId) {
+    const msg = 'Missing user auth ID.';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Error', msg);
+    return;
+  }
+
+  const deleteUser = async () => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        const msg = 'You are not logged in.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Error', msg);
+        return;
       }
-    } else {
-      Alert.alert('Delete User', 'Are you sure?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteUserMutation.mutate({ id: userId }) },
-      ]);
+
+      const response = await fetch(
+        'https://hnkncuqckibrowronjyq.supabase.co/functions/v1/admin-delete-user',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ userId }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const msg = result.error || 'Failed to delete user.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Delete failed', msg);
+        return;
+      }
+
+      await refreshUsers();
+      await refreshBookings();
+
+      const msg = 'User deleted permanently.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Success', msg);
+    } catch (error: any) {
+      const msg = error?.message || 'Something went wrong.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Error', msg);
     }
   };
+
+  if (Platform.OS === 'web') {
+    if (window.confirm('Permanently delete this user? This cannot be undone.')) {
+      await deleteUser();
+    }
+  } else {
+    Alert.alert('Delete User', 'Permanently delete this user? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: deleteUser },
+    ]);
+  }
+};
 
   const handleEditUser = (u: User) => {
     setEditingUser(u);
@@ -1773,7 +1827,7 @@ export default function AdminPanel() {
                           style={styles.iconButton}
                           onPress={(event) => {
                             event.stopPropagation();
-                            handleDeleteUser(parent.id);
+                            handleDeleteUser(parent.userId);
                           }}
                         >
                           <Trash2 color={Colors.danger} size={20} />
