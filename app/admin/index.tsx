@@ -2288,99 +2288,196 @@ const handleCreateParentAccount = async () => {
             {attendanceType === 'private' && (
               <View>
                 <View style={styles.attendanceFilterBox}>
-                  <Text style={styles.attendanceFilterLabel}>Private attendance</Text>
-                  <Text style={styles.attendanceSelectedDateText}>
-                    Mark presence for private sessions. Use search to find a student or parent.
-                  </Text>
+                  <Text style={styles.attendanceFilterLabel}>Private attendance date</Text>
+                  <View style={styles.attendanceFilterRow}>
+                    <TouchableOpacity
+                      style={styles.attendanceFilterButton}
+                      onPress={() => setAttendanceDateFromDate(new Date())}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.attendanceFilterButtonText}>Today</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.attendanceFilterButtonSecondary}
+                      onPress={() => setShowAttendanceDatePicker(true)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.attendanceFilterButtonSecondaryText}>Pick Date 📅</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.attendanceFilterButtonSecondary}
+                      onPress={() => {
+                        setSelectedAttendanceDate('');
+                        setSelectedAttendanceWeekDay(null);
+                        setSelectedAttendanceClassForDay(null);
+                        setAttendanceSearch('');
+                        setShowAttendanceDatePicker(false);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.attendanceFilterButtonSecondaryText}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {selectedAttendanceDate ? (
+                    <Text style={styles.attendanceSelectedDateText}>{formatAttendanceDate(selectedAttendanceDate)}</Text>
+                  ) : (
+                    <Text style={styles.attendanceSelectedDateText}>No date selected</Text>
+                  )}
+
+                  {showAttendanceDatePicker && Platform.OS === 'web' &&
+                    React.createElement('input', {
+                      type: 'date',
+                      value: selectedAttendanceDate,
+                      onChange: (event: any) => {
+                        const value = event?.target?.value;
+                        if (value) {
+                          setAttendanceDateFromDate(safeDate(value));
+                          setShowAttendanceDatePicker(false);
+                        }
+                      },
+                      style: {
+                        marginTop: 10,
+                        padding: 12,
+                        borderRadius: 8,
+                        border: '1px solid #ddd',
+                        fontSize: 15,
+                        maxWidth: 220,
+                      },
+                    })
+                  }
+
+                  {showAttendanceDatePicker && Platform.OS !== 'web' && (
+                    <View style={styles.nativePickerBox}>
+                      <DateTimePicker
+                        value={attendancePickerDate}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        onChange={(event: any, selectedDate?: Date) => {
+                          if (Platform.OS === 'android') {
+                            setShowAttendanceDatePicker(false);
+                          }
+
+                          if (event?.type === 'dismissed') return;
+
+                          if (selectedDate) {
+                            setAttendanceDateFromDate(selectedDate);
+                          }
+                        }}
+                      />
+
+                      {Platform.OS === 'ios' && (
+                        <TouchableOpacity
+                          style={styles.attendanceFilterButton}
+                          onPress={() => setShowAttendanceDatePicker(false)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.attendanceFilterButtonText}>Done</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
                 </View>
 
                 <TextInput
-                  placeholder="Search private student, parent, phone, or date..."
+                  placeholder="Search private student, parent, phone, or description..."
                   style={styles.input}
                   value={attendanceSearch}
                   onChangeText={setAttendanceSearch}
                 />
 
-                {privateAttendanceSessions
-                  .filter((session: any) => {
-                    const search = attendanceSearch.trim().toLowerCase();
-                    if (!search) return true;
+                {!selectedAttendanceDate ? (
+                  <Text style={styles.emptyStateText}>Select a date to see that day’s private sessions.</Text>
+                ) : (
+                  <>
+                    {privateAttendanceSessions
+                      .filter((session: any) => {
+                        const sessionDateKey = String(session.session_date || '').slice(0, 10);
+                        if (sessionDateKey !== selectedAttendanceDate) return false;
 
-                    return (
-                      String(session.child?.name || '').toLowerCase().includes(search) ||
-                      String(session.parent?.name || '').toLowerCase().includes(search) ||
-                      String(session.parent?.phone_number || '').toLowerCase().includes(search) ||
-                      String(session.session_date || '').toLowerCase().includes(search) ||
-                      String(session.privateBooking?.description || '').toLowerCase().includes(search)
-                    );
-                  })
-                  .map((session: any) => {
-                    const statusText =
-                      session.attended === true
-                        ? 'Present'
-                        : session.attended === false
-                          ? 'Absent'
-                          : 'Not marked';
+                        const search = attendanceSearch.trim().toLowerCase();
+                        if (!search) return true;
 
-                    return (
-                      <View key={session.id} style={styles.attendanceStudentCard}>
-                        <View style={styles.attendanceStudentInfo}>
-                          <Text style={styles.attendanceName}>{session.child?.name || 'Unknown student'}</Text>
-                          <Text style={styles.attendanceParent}>Parent: {session.parent?.name || 'Unknown parent'}</Text>
-                          {!!session.parent?.phone_number && (
-                            <Text style={styles.attendanceStatus}>Phone: {session.parent.phone_number}</Text>
-                          )}
-                          <Text style={styles.attendanceStatus}>Date: {formatAttendanceDate(session.session_date)}</Text>
-                          <Text style={styles.attendanceStatus}>Status: {statusText}</Text>
-                          {!!session.privateBooking?.description && (
-                            <Text style={styles.makeupNoteText}>Description: {session.privateBooking.description}</Text>
-                          )}
-                          {!!session.note && <Text style={styles.makeupNoteText}>Note: {session.note}</Text>}
-                        </View>
+                        return (
+                          String(session.child?.name || '').toLowerCase().includes(search) ||
+                          String(session.parent?.name || '').toLowerCase().includes(search) ||
+                          String(session.parent?.phone_number || '').toLowerCase().includes(search) ||
+                          String(session.privateBooking?.description || '').toLowerCase().includes(search)
+                        );
+                      })
+                      .map((session: any) => {
+                        const statusText =
+                          session.attended === true
+                            ? 'Present'
+                            : session.attended === false
+                              ? 'Absent'
+                              : 'Not marked';
 
-                        <View style={styles.attendanceActions}>
-                          <TouchableOpacity
-                            style={[
-                              styles.attendancePresentButton,
-                              session.attended === true && styles.attendanceButtonActive,
-                            ]}
-                            onPress={() => handleMarkPrivateAttendance(session.id, true)}
-                            activeOpacity={0.85}
-                          >
-                            <Text
-                              style={[
-                                styles.attendanceButtonText,
-                                session.attended === true && styles.attendanceButtonTextActive,
-                              ]}
-                            >
-                              Present
-                            </Text>
-                          </TouchableOpacity>
+                        return (
+                          <View key={session.id} style={styles.attendanceStudentCard}>
+                            <View style={styles.attendanceStudentInfo}>
+                              <Text style={styles.attendanceName}>{session.child?.name || 'Unknown student'}</Text>
+                              <Text style={styles.attendanceParent}>Parent: {session.parent?.name || 'Unknown parent'}</Text>
+                              {!!session.parent?.phone_number && (
+                                <Text style={styles.attendanceStatus}>Phone: {session.parent.phone_number}</Text>
+                              )}
+                              <Text style={styles.attendanceStatus}>Date: {formatAttendanceDate(session.session_date)}</Text>
+                              <Text style={styles.attendanceStatus}>Status: {statusText}</Text>
+                              {!!session.privateBooking?.description && (
+                                <Text style={styles.makeupNoteText}>Description: {session.privateBooking.description}</Text>
+                              )}
+                              {!!session.note && <Text style={styles.makeupNoteText}>Note: {session.note}</Text>}
+                            </View>
 
-                          <TouchableOpacity
-                            style={[
-                              styles.attendanceAbsentButton,
-                              session.attended === false && styles.attendanceAbsentButtonActive,
-                            ]}
-                            onPress={() => handleMarkPrivateAttendance(session.id, false)}
-                            activeOpacity={0.85}
-                          >
-                            <Text
-                              style={[
-                                styles.attendanceAbsentText,
-                                session.attended === false && styles.attendanceButtonTextActive,
-                              ]}
-                            >
-                              Absent
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
+                            <View style={styles.attendanceActions}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.attendancePresentButton,
+                                  session.attended === true && styles.attendanceButtonActive,
+                                ]}
+                                onPress={() => handleMarkPrivateAttendance(session.id, true)}
+                                activeOpacity={0.85}
+                              >
+                                <Text
+                                  style={[
+                                    styles.attendanceButtonText,
+                                    session.attended === true && styles.attendanceButtonTextActive,
+                                  ]}
+                                >
+                                  Present
+                                </Text>
+                              </TouchableOpacity>
 
-                {privateAttendanceSessions.length === 0 && (
-                  <Text style={styles.emptyStateText}>No private sessions found yet.</Text>
+                              <TouchableOpacity
+                                style={[
+                                  styles.attendanceAbsentButton,
+                                  session.attended === false && styles.attendanceAbsentButtonActive,
+                                ]}
+                                onPress={() => handleMarkPrivateAttendance(session.id, false)}
+                                activeOpacity={0.85}
+                              >
+                                <Text
+                                  style={[
+                                    styles.attendanceAbsentText,
+                                    session.attended === false && styles.attendanceButtonTextActive,
+                                  ]}
+                                >
+                                  Absent
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
+
+                    {privateAttendanceSessions.filter(
+                      (session: any) => String(session.session_date || '').slice(0, 10) === selectedAttendanceDate
+                    ).length === 0 && (
+                      <Text style={styles.emptyStateText}>No private sessions found for this date.</Text>
+                    )}
+                  </>
                 )}
               </View>
             )}
