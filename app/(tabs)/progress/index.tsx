@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,16 @@ type ProgressData = {
   usableSessions: number;
 };
 
+type PrivateProgressData = {
+  percentage: number;
+  completedSessions: number;
+  totalSessions: number;
+  remainingSessions: number;
+  absentSessions: number;
+  expiredSessions: number;
+  packagesCount: number;
+};
+
 export default function ProgressScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
@@ -31,6 +41,8 @@ export default function ProgressScreen() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [classesMap, setClassesMap] = useState<Record<string, any>>({});
+  const [privateBookings, setPrivateBookings] = useState<any[]>([]);
+  const [progressType, setProgressType] = useState<'class' | 'private'>('class');
   const [loading, setLoading] = useState(false);
 
   const children = user?.children || [];
@@ -69,6 +81,22 @@ export default function ProgressScreen() {
         setAttendanceRecords(attendanceData ?? []);
       }
 
+      const { data: privateData, error: privateError } = await supabase
+        .from('private_bookings')
+        .select(`
+          *,
+          private_booking_sessions (*)
+        `)
+        .in('child_id', childIds)
+        .order('start_date', { ascending: true });
+
+      if (privateError) {
+        console.error('Private progress error:', privateError);
+        setPrivateBookings([]);
+      } else {
+        setPrivateBookings(privateData ?? []);
+      }
+
       const classIds = Array.from(
         new Set((bookingsData ?? []).map((b: any) => String(b.class_id)))
       );
@@ -79,7 +107,7 @@ export default function ProgressScreen() {
 
       const allClassIds = Array.from(new Set([...classIds, ...attendedClassIds]));
 
-      let classMap: Record<string, any> = {};
+      const classMap: Record<string, any> = {};
 
       if (allClassIds.length > 0) {
         const { data: classesData, error: classesError } = await supabase
@@ -101,11 +129,21 @@ export default function ProgressScreen() {
     };
 
     fetchProgressData();
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, children.length]);
 
   const safeDate = (dateString: string) => {
     if (!dateString) return new Date();
     return new Date(`${dateString}T12:00:00`);
+  };
+
+  const formatDisplayDate = (dateString: string) => {
+    if (!dateString) return 'No date';
+    return safeDate(dateString).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   };
 
   const isPastSession = (dateString: string) => {
@@ -130,6 +168,10 @@ export default function ProgressScreen() {
         String(record.child_id) === String(childId) &&
         record.status === 'present'
     );
+  };
+
+  const getChildPrivateBookings = (childId: string) => {
+    return privateBookings.filter((booking) => String(booking.child_id) === String(childId));
   };
 
   const getEnrolledClasses = (childBookings: any[], childAttendanceRecords: any[]) => {
@@ -219,8 +261,71 @@ export default function ProgressScreen() {
     };
   };
 
+  const getPrivateProgressData = (childPrivateBookings: any[]): PrivateProgressData => {
+    const activePrivateBookings = childPrivateBookings.filter(
+      (booking) => booking.status !== 'cancelled'
+    );
+
+    const sessions = activePrivateBookings.flatMap((booking) =>
+      (booking.private_booking_sessions || []).map((session: any) => ({
+        ...session,
+        booking,
+      }))
+    );
+
+    const totalSessions = sessions.length;
+    const completedSessions = sessions.filter((session) => session.attended === true).length;
+    const absentSessions = sessions.filter((session) => session.attended === false).length;
+    const expiredSessions = sessions.filter(
+      (session) => session.attended !== true && session.attended !== false && isPastSession(session.session_date)
+    ).length;
+    const remainingSessions = sessions.filter(
+      (session) => session.attended !== true && session.attended !== false && !isPastSession(session.session_date)
+    ).length;
+
+    const percentage =
+      totalSessions === 0
+        ? 0
+        : Math.min(Math.round((completedSessions / totalSessions) * 100), 100);
+
+    return {
+      percentage,
+      completedSessions,
+      totalSessions,
+      remainingSessions,
+      absentSessions,
+      expiredSessions,
+      packagesCount: activePrivateBookings.length,
+    };
+  };
+
+  const getPrivateSessions = (childPrivateBookings: any[]) => {
+    return childPrivateBookings
+      .flatMap((booking) =>
+        (booking.private_booking_sessions || []).map((session: any) => ({
+          ...session,
+          booking,
+        }))
+      )
+      .sort((a, b) => safeDate(a.session_date).getTime() - safeDate(b.session_date).getTime());
+  };
+
   const getProgressBarWidth = (percentage: number) => {
     return `${Math.min(Math.max(percentage, 0), 100)}%` as `${number}%`;
+  };
+
+  const getPrivateSessionLabel = (session: any) => {
+    if (session.attended === true) return 'Present';
+    if (session.attended === false) return 'Absent';
+    if (isPastSession(session.session_date)) return 'Expired';
+    return 'Upcoming';
+  };
+
+  const getPrivateSessionBadgeStyle = (session: any) => {
+    if (session.attended === true) return styles.sessionBadgePresent;
+    if (session.attended === false) return styles.sessionBadgeAbsent;
+    if (isPastSession(session.session_date)) return styles.sessionBadgeExpired;
+    return styles.sessionBadgeUpcoming;
   };
 
   if (!isAuthenticated || !user) {
@@ -266,8 +371,12 @@ export default function ProgressScreen() {
         children.map((child: any) => {
           const childBookings = getChildBookings(child.id);
           const childAttendanceRecords = getChildAttendanceRecords(child.id);
-          const progress = getProgressData(childBookings, childAttendanceRecords);
+          const childPrivateBookings = getChildPrivateBookings(child.id);
+          const classProgress = getProgressData(childBookings, childAttendanceRecords);
+          const privateProgress = getPrivateProgressData(childPrivateBookings);
+          const selectedProgress = progressType === 'class' ? classProgress : privateProgress;
           const enrolledClasses = getEnrolledClasses(childBookings, childAttendanceRecords);
+          const privateSessionsForChild = getPrivateSessions(childPrivateBookings);
 
           return (
             <View key={child.id} style={styles.studentSection}>
@@ -294,16 +403,56 @@ export default function ProgressScreen() {
                   </View>
                 </View>
 
+                <View style={styles.progressToggle}>
+                  <TouchableOpacity
+                    style={[
+                      styles.progressToggleButton,
+                      progressType === 'class' && styles.progressToggleButtonActive,
+                    ]}
+                    onPress={() => setProgressType('class')}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.progressToggleText,
+                        progressType === 'class' && styles.progressToggleTextActive,
+                      ]}
+                    >
+                      Class Progress
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.progressToggleButton,
+                      progressType === 'private' && styles.progressToggleButtonActive,
+                    ]}
+                    onPress={() => setProgressType('private')}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.progressToggleText,
+                        progressType === 'private' && styles.progressToggleTextActive,
+                      ]}
+                    >
+                      Private Progress
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 <View style={styles.statsContainer}>
                   <View style={styles.statItem}>
-                    <Text style={styles.statValue}>{enrolledClasses.length}</Text>
-                    <Text style={styles.statLabel}>Classes</Text>
+                    <Text style={styles.statValue}>
+                      {progressType === 'class' ? enrolledClasses.length : privateProgress.packagesCount}
+                    </Text>
+                    <Text style={styles.statLabel}>{progressType === 'class' ? 'Classes' : 'Packages'}</Text>
                   </View>
 
                   <View style={styles.statDivider} />
 
                   <View style={styles.statItem}>
-                    <Text style={styles.statValue}>{progress.percentage}%</Text>
+                    <Text style={styles.statValue}>{selectedProgress.percentage}%</Text>
                     <Text style={styles.statLabel}>Progress</Text>
                   </View>
                 </View>
@@ -313,102 +462,184 @@ export default function ProgressScreen() {
                     <View
                       style={[
                         styles.progressBarFill,
-                        { width: getProgressBarWidth(progress.percentage) },
+                        { width: getProgressBarWidth(selectedProgress.percentage) },
                       ]}
                     />
                   </View>
 
                   <Text style={styles.progressSummaryMain}>
-                    {progress.completedSessions} / {progress.totalSessions} sessions completed
+                    {selectedProgress.completedSessions} / {selectedProgress.totalSessions} sessions completed
                   </Text>
 
                   <Text style={styles.progressSummarySub}>
-                    {progress.remainingSessions} remaining
-                    {progress.expiredSessions > 0 ? ` • ${progress.expiredSessions} expired` : ''}
-                    {progress.makeupSessions > 0 ? ` • ${progress.makeupSessions} make-up used` : ''}
+                    {selectedProgress.remainingSessions} remaining
+                    {progressType === 'class' && classProgress.expiredSessions > 0 ? ` • ${classProgress.expiredSessions} expired` : ''}
+                    {progressType === 'class' && classProgress.makeupSessions > 0 ? ` • ${classProgress.makeupSessions} make-up used` : ''}
+                    {progressType === 'private' && privateProgress.absentSessions > 0 ? ` • ${privateProgress.absentSessions} absent` : ''}
+                    {progressType === 'private' && privateProgress.expiredSessions > 0 ? ` • ${privateProgress.expiredSessions} expired` : ''}
                   </Text>
                 </View>
               </LinearGradient>
 
-              <View style={styles.sectionContent}>
-                <View style={styles.contentShapes}>
-                  <View style={styles.contentCircle1} />
-                  <View style={styles.contentCircle2} />
-                </View>
+              {progressType === 'class' ? (
+                <>
+                  <View style={styles.sectionContent}>
+                    <View style={styles.contentShapes}>
+                      <View style={styles.contentCircle1} />
+                      <View style={styles.contentCircle2} />
+                    </View>
 
-                <View style={styles.sectionHeader}>
-                  <Calendar color={Colors.primary} size={20} />
-                  <Text style={styles.sectionTitle}>Enrolled Classes</Text>
-                </View>
+                    <View style={styles.sectionHeader}>
+                      <Calendar color={Colors.primary} size={20} />
+                      <Text style={styles.sectionTitle}>Enrolled Classes</Text>
+                    </View>
 
-                {enrolledClasses.length === 0 ? (
-                  <Text style={styles.noDataText}>No classes enrolled yet</Text>
-                ) : (
-                  enrolledClasses.map((cls: any) => (
-                    <View key={cls.id} style={styles.classItem}>
-                      <View style={styles.classItemLeft}>
-                        <Text style={styles.classItemName}>{cls.name}</Text>
-                        <Text style={styles.classItemTime}>
-                          {cls.day}, {cls.time} ({cls.duration})
-                        </Text>
-                        <Text style={styles.classItemLevel}>
-                          {cls.level} • {cls.ageGroup}
-                        </Text>
+                    {enrolledClasses.length === 0 ? (
+                      <Text style={styles.noDataText}>No classes enrolled yet</Text>
+                    ) : (
+                      enrolledClasses.map((cls: any) => (
+                        <View key={cls.id} style={styles.classItem}>
+                          <View style={styles.classItemLeft}>
+                            <Text style={styles.classItemName}>{cls.name}</Text>
+                            <Text style={styles.classItemTime}>
+                              {cls.day}, {cls.time} ({cls.duration})
+                            </Text>
+                            <Text style={styles.classItemLevel}>
+                              {cls.level} • {cls.ageGroup}
+                            </Text>
+                          </View>
+
+                          <View style={styles.progressBadge}>
+                            <TrendingUp color={Colors.success} size={16} />
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+
+                  <View style={styles.sectionContent}>
+                    <View style={styles.sectionHeader}>
+                      <Clock color={Colors.primary} size={20} />
+                      <Text style={styles.sectionTitle}>Session Usage</Text>
+                    </View>
+
+                    <View style={styles.usageGrid}>
+                      <View style={styles.usageCard}>
+                        <CheckCircle2 color={Colors.success} size={20} />
+                        <Text style={styles.usageNumber}>{classProgress.completedSessions}</Text>
+                        <Text style={styles.usageLabel}>Completed</Text>
                       </View>
 
-                      <View style={styles.progressBadge}>
-                        <TrendingUp color={Colors.success} size={16} />
+                      <View style={styles.usageCard}>
+                        <Calendar color={Colors.primary} size={20} />
+                        <Text style={styles.usageNumber}>{classProgress.remainingSessions}</Text>
+                        <Text style={styles.usageLabel}>Remaining</Text>
+                      </View>
+
+                      <View style={styles.usageCard}>
+                        <AlertCircle color={Colors.danger} size={20} />
+                        <Text style={styles.usageNumber}>{classProgress.expiredSessions}</Text>
+                        <Text style={styles.usageLabel}>Expired</Text>
                       </View>
                     </View>
-                  ))
-                )}
-              </View>
 
-              <View style={styles.sectionContent}>
-                <View style={styles.sectionHeader}>
-                  <Clock color={Colors.primary} size={20} />
-                  <Text style={styles.sectionTitle}>Session Usage</Text>
-                </View>
+                    {classProgress.makeupSessions > 0 && (
+                      <View style={styles.makeupNotice}>
+                        <Text style={styles.makeupNoticeTitle}>Make-up sessions included</Text>
+                        <Text style={styles.makeupNoticeText}>
+                          {classProgress.makeupSessions} make-up/manual attendance record
+                          {classProgress.makeupSessions === 1 ? '' : 's'} deducted from the total package usage.
+                        </Text>
+                      </View>
+                    )}
 
-                <View style={styles.usageGrid}>
-                  <View style={styles.usageCard}>
-                    <CheckCircle2 color={Colors.success} size={20} />
-                    <Text style={styles.usageNumber}>{progress.completedSessions}</Text>
-                    <Text style={styles.usageLabel}>Completed</Text>
+                    {classProgress.expiredSessions > 0 && (
+                      <View style={styles.expiredNotice}>
+                        <Text style={styles.expiredNoticeTitle}>Expired sessions</Text>
+                        <Text style={styles.expiredNoticeText}>
+                          Past sessions that were not marked present are counted as expired and are no longer remaining.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.sectionContent}>
+                    <View style={styles.sectionHeader}>
+                      <Clock color={Colors.primary} size={20} />
+                      <Text style={styles.sectionTitle}>Private Session Usage</Text>
+                    </View>
+
+                    <View style={styles.usageGrid}>
+                      <View style={styles.usageCard}>
+                        <CheckCircle2 color={Colors.success} size={20} />
+                        <Text style={styles.usageNumber}>{privateProgress.completedSessions}</Text>
+                        <Text style={styles.usageLabel}>Present</Text>
+                      </View>
+
+                      <View style={styles.usageCard}>
+                        <Calendar color={Colors.primary} size={20} />
+                        <Text style={styles.usageNumber}>{privateProgress.remainingSessions}</Text>
+                        <Text style={styles.usageLabel}>Upcoming</Text>
+                      </View>
+
+                      <View style={styles.usageCard}>
+                        <AlertCircle color={Colors.danger} size={20} />
+                        <Text style={styles.usageNumber}>{privateProgress.absentSessions}</Text>
+                        <Text style={styles.usageLabel}>Absent</Text>
+                      </View>
+                    </View>
+
+                    {childPrivateBookings.length === 0 ? (
+                      <Text style={styles.noDataText}>No private sessions booked yet</Text>
+                    ) : (
+                      childPrivateBookings.map((booking: any) => (
+                        <View key={booking.id} style={styles.privatePackageCard}>
+                          <Text style={styles.privatePackageTitle}>{booking.title || 'Private Session'}</Text>
+                          <Text style={styles.privatePackageText}>
+                            Package: {booking.package_hours || booking.total_sessions || 0} hours
+                            {booking.session_duration_hours ? ` • ${booking.session_duration_hours}h/session` : ''}
+                          </Text>
+                          <Text style={styles.privatePackageText}>
+                            Day: {booking.selected_weekday || booking.preferred_day || 'Not set'}
+                            {booking.start_date ? ` • Starts ${formatDisplayDate(booking.start_date)}` : ''}
+                          </Text>
+                          {!!(booking.description || booking.notes) && (
+                            <Text style={styles.privatePackageText}>
+                              Notes: {booking.description || booking.notes}
+                            </Text>
+                          )}
+                        </View>
+                      ))
+                    )}
                   </View>
 
-                  <View style={styles.usageCard}>
-                    <Calendar color={Colors.primary} size={20} />
-                    <Text style={styles.usageNumber}>{progress.remainingSessions}</Text>
-                    <Text style={styles.usageLabel}>Remaining</Text>
-                  </View>
+                  <View style={styles.sectionContent}>
+                    <View style={styles.sectionHeader}>
+                      <Calendar color={Colors.primary} size={20} />
+                      <Text style={styles.sectionTitle}>Private Session History</Text>
+                    </View>
 
-                  <View style={styles.usageCard}>
-                    <AlertCircle color={Colors.danger} size={20} />
-                    <Text style={styles.usageNumber}>{progress.expiredSessions}</Text>
-                    <Text style={styles.usageLabel}>Expired</Text>
-                  </View>
-                </View>
+                    {privateSessionsForChild.length === 0 ? (
+                      <Text style={styles.noDataText}>No private session dates yet</Text>
+                    ) : (
+                      privateSessionsForChild.map((session: any) => (
+                        <View key={session.id} style={styles.privateSessionItem}>
+                          <View style={styles.classItemLeft}>
+                            <Text style={styles.classItemName}>{formatDisplayDate(session.session_date)}</Text>
+                            {!!session.note && <Text style={styles.classItemTime}>{session.note}</Text>}
+                          </View>
 
-                {progress.makeupSessions > 0 && (
-                  <View style={styles.makeupNotice}>
-                    <Text style={styles.makeupNoticeTitle}>Make-up sessions included</Text>
-                    <Text style={styles.makeupNoticeText}>
-                      {progress.makeupSessions} make-up/manual attendance record
-                      {progress.makeupSessions === 1 ? '' : 's'} deducted from the total package usage.
-                    </Text>
+                          <View style={[styles.sessionBadge, getPrivateSessionBadgeStyle(session)]}>
+                            <Text style={styles.sessionBadgeText}>{getPrivateSessionLabel(session)}</Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
                   </View>
-                )}
-
-                {progress.expiredSessions > 0 && (
-                  <View style={styles.expiredNotice}>
-                    <Text style={styles.expiredNoticeTitle}>Expired sessions</Text>
-                    <Text style={styles.expiredNoticeText}>
-                      Past sessions that were not marked present are counted as expired and are no longer remaining.
-                    </Text>
-                  </View>
-                )}
-              </View>
+                </>
+              )}
             </View>
           );
         })
@@ -540,6 +771,31 @@ const styles = StyleSheet.create({
   studentAge: {
     fontSize: 14,
     color: Colors.gold,
+  },
+  progressToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 999,
+    padding: 4,
+    marginBottom: 18,
+    gap: 6,
+  },
+  progressToggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  progressToggleButtonActive: {
+    backgroundColor: Colors.white,
+  },
+  progressToggleText: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    fontWeight: '900' as const,
+  },
+  progressToggleTextActive: {
+    color: Colors.primary,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -733,5 +989,56 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text,
     lineHeight: 18,
+  },
+  privatePackageCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  privatePackageTitle: {
+    fontSize: 16,
+    fontWeight: '900' as const,
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  privatePackageText: {
+    fontSize: 13,
+    color: Colors.textLight,
+    lineHeight: 19,
+    marginTop: 2,
+  },
+  privateSessionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: 12,
+  },
+  sessionBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  sessionBadgePresent: {
+    backgroundColor: '#E8F5E9',
+  },
+  sessionBadgeAbsent: {
+    backgroundColor: '#FFEBEE',
+  },
+  sessionBadgeUpcoming: {
+    backgroundColor: '#E3F2FD',
+  },
+  sessionBadgeExpired: {
+    backgroundColor: '#FFF3E0',
+  },
+  sessionBadgeText: {
+    fontSize: 11,
+    fontWeight: '900' as const,
+    color: Colors.text,
   },
 });
