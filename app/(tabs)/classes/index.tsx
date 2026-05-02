@@ -17,6 +17,10 @@ export default function ClassesScreen() {
     router.push('/(tabs)/classes/monthly-plan' as Href);
   };
 
+  const openPrivateBooking = () => {
+    router.push('/(tabs)/classes/private-booking' as Href);
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
@@ -38,6 +42,18 @@ export default function ClassesScreen() {
           <View>
             <Text style={styles.bookButtonTitle}>Book a Class</Text>
             <Text style={styles.bookButtonSubtitle}>Package • Weekly schedule • Start date</Text>
+          </View>
+          <ChevronRight color={Colors.white} size={28} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.bookButton, styles.privateButton]}
+          onPress={openPrivateBooking}
+          activeOpacity={0.88}
+        >
+          <View>
+            <Text style={styles.bookButtonTitle}>Book a Private</Text>
+            <Text style={styles.bookButtonSubtitle}>4h • 8h • 16h package</Text>
           </View>
           <ChevronRight color={Colors.white} size={28} />
         </TouchableOpacity>
@@ -119,6 +135,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 14,
     elevation: 5,
+  },
+  privateButton: {
+    marginTop: 14,
+    backgroundColor: '#6C63FF',
   },
   bookButtonTitle: {
     color: Colors.white,
