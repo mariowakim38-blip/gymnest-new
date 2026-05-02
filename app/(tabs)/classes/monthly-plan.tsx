@@ -254,8 +254,16 @@ export default function MonthlyPlan() {
       return;
     }
 
-    Alert.alert('Success', 'Monthly schedule created successfully.');
-    router.back();
+    Alert.alert(
+      'Booking Confirmed ✅',
+      'Your class schedule has been successfully booked.',
+      [
+        {
+          text: 'OK',
+          onPress: () => router.replace('/classes'),
+        },
+      ]
+    );
   };
 
   return (
