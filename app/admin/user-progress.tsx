@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Trophy, Calendar, TrendingUp, Clock, CheckCircle2, AlertCircle } from 'lucide-react-native';
@@ -31,6 +32,8 @@ export default function AdminUserProgressScreen() {
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [classesMap, setClassesMap] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
+  const [progressType, setProgressType] = useState<'class' | 'private'>('class');
+  const [privateBookings, setPrivateBookings] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchProgressData = async () => {
@@ -84,6 +87,21 @@ export default function AdminUserProgressScreen() {
         setAttendanceRecords([]);
       } else {
         setAttendanceRecords(attendanceData ?? []);
+      }
+
+      const { data: privateData, error: privateError } = await supabase
+        .from('private_bookings')
+        .select(`
+          *,
+          private_booking_sessions (*)
+        `)
+        .eq('child_id', childId);
+
+      if (privateError) {
+        console.error('Admin private progress error:', privateError);
+        setPrivateBookings([]);
+      } else {
+        setPrivateBookings(privateData ?? []);
       }
 
       const classIds = Array.from(
@@ -233,6 +251,58 @@ export default function AdminUserProgressScreen() {
     };
   };
 
+  const getPrivateProgressData = () => {
+    const allSessions = privateBookings.flatMap((booking: any) =>
+      (booking.private_booking_sessions || []).map((session: any) => ({
+        ...session,
+        booking,
+      }))
+    );
+
+    const totalSessions = allSessions.length;
+    const completedSessions = allSessions.filter((session: any) => session.attended === true).length;
+    const absentSessions = allSessions.filter((session: any) => session.attended === false).length;
+    const unmarkedSessions = allSessions.filter((session: any) => session.attended === null || session.attended === undefined).length;
+    const upcomingSessions = allSessions.filter((session: any) =>
+      (session.attended === null || session.attended === undefined) && !isPastSession(session.session_date)
+    ).length;
+    const remainingSessions = Math.max(totalSessions - completedSessions - absentSessions, 0);
+    const percentage =
+      totalSessions === 0
+        ? 0
+        : Math.min(Math.round((completedSessions / totalSessions) * 100), 100);
+
+    return {
+      percentage,
+      completedSessions,
+      totalSessions,
+      remainingSessions,
+      absentSessions,
+      unmarkedSessions,
+      upcomingSessions,
+      packagesCount: privateBookings.length,
+      sessions: allSessions.sort((a: any, b: any) =>
+        safeDate(a.session_date).getTime() - safeDate(b.session_date).getTime()
+      ),
+    };
+  };
+
+  const formatDisplayDate = (dateString: string) => {
+    if (!dateString) return 'No date';
+    return safeDate(dateString).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const getPrivateSessionStatus = (session: any) => {
+    if (session.attended === true) return 'Present';
+    if (session.attended === false) return 'Absent';
+    return isPastSession(session.session_date) ? 'Not marked' : 'Upcoming';
+  };
+
   const getProgressBarWidth = (percentage: number) => {
     return `${Math.min(Math.max(percentage, 0), 100)}%` as `${number}%`;
   };
@@ -255,8 +325,10 @@ export default function AdminUserProgressScreen() {
     );
   }
 
-  const progress = getProgressData();
+  const classProgress = getProgressData();
+  const privateProgress = getPrivateProgressData();
   const enrolledClasses = getEnrolledClasses();
+  const activeProgress = progressType === 'class' ? classProgress : privateProgress;
 
   return (
     <ScrollView
@@ -285,14 +357,14 @@ export default function AdminUserProgressScreen() {
 
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{enrolledClasses.length}</Text>
-              <Text style={styles.statLabel}>Classes</Text>
+              <Text style={styles.statValue}>{progressType === 'class' ? enrolledClasses.length : privateProgress.packagesCount}</Text>
+              <Text style={styles.statLabel}>{progressType === 'class' ? 'Classes' : 'Private packages'}</Text>
             </View>
 
             <View style={styles.statDivider} />
 
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{progress.percentage}%</Text>
+              <Text style={styles.statValue}>{activeProgress.percentage}%</Text>
               <Text style={styles.statLabel}>Progress</Text>
             </View>
           </View>
@@ -302,23 +374,47 @@ export default function AdminUserProgressScreen() {
               <View
                 style={[
                   styles.progressBarFill,
-                  { width: getProgressBarWidth(progress.percentage) },
+                  { width: getProgressBarWidth(activeProgress.percentage) },
                 ]}
               />
             </View>
 
             <Text style={styles.progressSummaryMain}>
-              {progress.completedSessions} / {progress.totalSessions} sessions completed
+              {activeProgress.completedSessions} / {activeProgress.totalSessions} sessions completed
             </Text>
 
             <Text style={styles.progressSummarySub}>
-              {progress.remainingSessions} remaining
-              {progress.expiredSessions > 0 ? ` • ${progress.expiredSessions} expired` : ''}
-              {progress.makeupSessions > 0 ? ` • ${progress.makeupSessions} make-up used` : ''}
+              {activeProgress.remainingSessions} remaining
+              {progressType === 'class' && classProgress.expiredSessions > 0 ? ` • ${classProgress.expiredSessions} expired` : ''}
+              {progressType === 'class' && classProgress.makeupSessions > 0 ? ` • ${classProgress.makeupSessions} make-up used` : ''}
+              {progressType === 'private' && privateProgress.absentSessions > 0 ? ` • ${privateProgress.absentSessions} absent` : ''}
             </Text>
           </View>
         </LinearGradient>
 
+        <View style={styles.progressToggle}>
+          <TouchableOpacity
+            style={[styles.progressToggleButton, progressType === 'class' && styles.progressToggleButtonActive]}
+            onPress={() => setProgressType('class')}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.progressToggleText, progressType === 'class' && styles.progressToggleTextActive]}>
+              Class Progress
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.progressToggleButton, progressType === 'private' && styles.progressToggleButtonActive]}
+            onPress={() => setProgressType('private')}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.progressToggleText, progressType === 'private' && styles.progressToggleTextActive]}>
+              Private Progress
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {progressType === 'class' && (
         <View style={styles.sectionContent}>
           <View style={styles.sectionHeader}>
             <Calendar color={Colors.primary} size={20} />
@@ -347,7 +443,9 @@ export default function AdminUserProgressScreen() {
             ))
           )}
         </View>
+        )}
 
+        {progressType === 'class' && (
         <View style={styles.sectionContent}>
           <View style={styles.sectionHeader}>
             <Clock color={Colors.primary} size={20} />
@@ -357,33 +455,137 @@ export default function AdminUserProgressScreen() {
           <View style={styles.usageGrid}>
             <View style={styles.usageCard}>
               <CheckCircle2 color={Colors.success} size={20} />
-              <Text style={styles.usageNumber}>{progress.completedSessions}</Text>
+              <Text style={styles.usageNumber}>{classProgress.completedSessions}</Text>
               <Text style={styles.usageLabel}>Completed</Text>
             </View>
 
             <View style={styles.usageCard}>
               <Calendar color={Colors.primary} size={20} />
-              <Text style={styles.usageNumber}>{progress.remainingSessions}</Text>
+              <Text style={styles.usageNumber}>{classProgress.remainingSessions}</Text>
               <Text style={styles.usageLabel}>Remaining</Text>
             </View>
 
             <View style={styles.usageCard}>
               <AlertCircle color={Colors.danger} size={20} />
-              <Text style={styles.usageNumber}>{progress.expiredSessions}</Text>
+              <Text style={styles.usageNumber}>{classProgress.expiredSessions}</Text>
               <Text style={styles.usageLabel}>Expired</Text>
             </View>
           </View>
 
-          {progress.makeupSessions > 0 && (
+          {classProgress.makeupSessions > 0 && (
             <View style={styles.makeupNotice}>
               <Text style={styles.makeupNoticeTitle}>Make-up sessions included</Text>
               <Text style={styles.makeupNoticeText}>
-                {progress.makeupSessions} make-up/manual attendance record
-                {progress.makeupSessions === 1 ? '' : 's'} deducted from total usage.
+                {classProgress.makeupSessions} make-up/manual attendance record
+                {classProgress.makeupSessions === 1 ? '' : 's'} deducted from total usage.
               </Text>
             </View>
           )}
         </View>
+        )}
+
+        {progressType === 'private' && (
+          <>
+            <View style={styles.sectionContent}>
+              <View style={styles.sectionHeader}>
+                <Clock color={Colors.primary} size={20} />
+                <Text style={styles.sectionTitle}>Private Session Usage</Text>
+              </View>
+
+              <View style={styles.usageGrid}>
+                <View style={styles.usageCard}>
+                  <CheckCircle2 color={Colors.success} size={20} />
+                  <Text style={styles.usageNumber}>{privateProgress.completedSessions}</Text>
+                  <Text style={styles.usageLabel}>Present</Text>
+                </View>
+
+                <View style={styles.usageCard}>
+                  <Calendar color={Colors.primary} size={20} />
+                  <Text style={styles.usageNumber}>{privateProgress.remainingSessions}</Text>
+                  <Text style={styles.usageLabel}>Remaining</Text>
+                </View>
+
+                <View style={styles.usageCard}>
+                  <AlertCircle color={Colors.danger} size={20} />
+                  <Text style={styles.usageNumber}>{privateProgress.absentSessions}</Text>
+                  <Text style={styles.usageLabel}>Absent</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.sectionContent}>
+              <View style={styles.sectionHeader}>
+                <Calendar color={Colors.primary} size={20} />
+                <Text style={styles.sectionTitle}>Private Packages</Text>
+              </View>
+
+              {privateBookings.length === 0 ? (
+                <Text style={styles.noDataText}>No private packages yet</Text>
+              ) : (
+                privateBookings.map((booking: any) => {
+                  const sessions = booking.private_booking_sessions || [];
+                  const completed = sessions.filter((session: any) => session.attended === true).length;
+                  const absent = sessions.filter((session: any) => session.attended === false).length;
+
+                  return (
+                    <View key={booking.id} style={styles.privatePackageCard}>
+                      <Text style={styles.classItemName}>Private Package</Text>
+                      <Text style={styles.classItemTime}>
+                        {booking.package_hours || sessions.length} total hours • {booking.session_duration_hours || 1}h/session
+                      </Text>
+                      <Text style={styles.classItemLevel}>
+                        {completed} present • {absent} absent • {Math.max(sessions.length - completed - absent, 0)} remaining
+                      </Text>
+                      {!!booking.description && (
+                        <Text style={styles.privateDescription}>{booking.description}</Text>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </View>
+
+            <View style={styles.sectionContent}>
+              <View style={styles.sectionHeader}>
+                <Calendar color={Colors.primary} size={20} />
+                <Text style={styles.sectionTitle}>Private Session History</Text>
+              </View>
+
+              {privateProgress.sessions.length === 0 ? (
+                <Text style={styles.noDataText}>No private sessions scheduled yet</Text>
+              ) : (
+                privateProgress.sessions.map((session: any) => {
+                  const status = getPrivateSessionStatus(session);
+
+                  return (
+                    <View key={session.id} style={styles.sessionHistoryItem}>
+                      <View style={styles.classItemLeft}>
+                        <Text style={styles.classItemName}>{formatDisplayDate(session.session_date)}</Text>
+                        {!!session.booking?.description && (
+                          <Text style={styles.classItemTime}>{session.booking.description}</Text>
+                        )}
+                        {!!session.note && (
+                          <Text style={styles.privateDescription}>Note: {session.note}</Text>
+                        )}
+                      </View>
+
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          status === 'Present' && styles.statusPresent,
+                          status === 'Absent' && styles.statusAbsent,
+                          status === 'Upcoming' && styles.statusUpcoming,
+                        ]}
+                      >
+                        <Text style={styles.statusBadgeText}>{status}</Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </>
+        )}
       </View>
     </ScrollView>
   );
@@ -526,6 +728,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold' as const,
     color: Colors.text,
   },
+
+  progressToggle: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  progressToggleButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  progressToggleButtonActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  progressToggleText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  progressToggleTextActive: {
+    color: Colors.white,
+  },
   noDataText: {
     fontSize: 14,
     color: Colors.textLight,
@@ -606,5 +835,47 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text,
     lineHeight: 18,
+  },
+
+  privatePackageCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
+  privateDescription: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  sessionHistoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: Colors.border,
+    marginLeft: 10,
+  },
+  statusPresent: {
+    backgroundColor: '#E8F5E9',
+  },
+  statusAbsent: {
+    backgroundColor: '#FFEBEE',
+  },
+  statusUpcoming: {
+    backgroundColor: '#E3F2FD',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: Colors.text,
   },
 });
