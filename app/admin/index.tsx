@@ -30,8 +30,15 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('announcements');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedClassDate, setSelectedClassDate] = useState<string>('');
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', phoneNumber: '' });
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    username: '',
+    phoneNumber: '',
+    childId: '',
+    childName: '',
+    childAge: '',
+  });
   const [userSearch, setUserSearch] = useState<string>('');
   const [showCreateUserModal, setShowCreateUserModal] = useState<boolean>(false);
   const [createUserLoading, setCreateUserLoading] = useState<boolean>(false);
@@ -148,9 +155,10 @@ export default function AdminPanel() {
     const mappedUsers = (profiles ?? []).map((profile: any) => ({
       id: profile.id,
       userId: profile.user_id,
-      name: profile.name ?? profile.full_name ?? 'Unnamed user',
+      name: profile.name ?? 'Unnamed user',
+      username: profile.username ?? '',
       email: profile.email ?? '',
-      phoneNumber: profile.phone_number ?? profile.phone ?? '',
+      phoneNumber: profile.phone_number ?? '',
       role: profile.role ?? 'parent',
       children: (childrenData ?? [])
         .filter((child: any) => child.profile_id === profile.id)
@@ -464,15 +472,82 @@ export default function AdminPanel() {
   }
 };
 
-  const handleEditUser = (u: User) => {
+  const handleEditUser = (u: any, child?: any) => {
+    const selectedChild = child || u.children?.[0];
+
     setEditingUser(u);
-    setEditForm({ name: u.name, email: u.email, phoneNumber: u.phoneNumber });
+    setEditForm({
+      name: u.name || '',
+      username: u.username || '',
+      phoneNumber: u.phoneNumber || '',
+      childId: selectedChild?.id || '',
+      childName: selectedChild?.name || '',
+      childAge: selectedChild?.age ? String(selectedChild.age) : '',
+    });
   };
 
   const handleSaveUser = async () => {
     if (!editingUser) return;
-    await updateUserMutation.mutateAsync({ id: editingUser.id, name: editForm.name, phoneNumber: editForm.phoneNumber });
+
+    const cleanName = editForm.name.trim();
+    const cleanUsername = editForm.username.trim();
+    const cleanPhone = editForm.phoneNumber.trim();
+    const cleanChildName = editForm.childName.trim();
+    const cleanChildAge = Number(editForm.childAge);
+
+    if (!cleanName || !cleanUsername || !cleanPhone) {
+      const msg = 'Parent name, username, and phone are required.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Missing information', msg);
+      return;
+    }
+
+    if (editForm.childId && (!cleanChildName || !Number.isFinite(cleanChildAge) || cleanChildAge < 1 || cleanChildAge > 18)) {
+      const msg = 'Child name and valid child age between 1 and 18 are required.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Missing child information', msg);
+      return;
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        name: cleanName,
+        username: cleanUsername,
+        phone_number: cleanPhone,
+      })
+      .eq('id', editingUser.id);
+
+    if (profileError) {
+      const msg = profileError.message || 'Failed to update parent.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Error', msg);
+      return;
+    }
+
+    if (editForm.childId) {
+      const { error: childError } = await supabase
+        .from('children')
+        .update({
+          name: cleanChildName,
+          age: cleanChildAge,
+        })
+        .eq('id', editForm.childId);
+
+      if (childError) {
+        const msg = childError.message || 'Failed to update child.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Error', msg);
+        return;
+      }
+    }
+
+    await refreshUsers();
     setEditingUser(null);
+
+    const msg = 'User updated successfully.';
+    if (Platform.OS === 'web') alert(msg);
+    else Alert.alert('Success', msg);
   };
 
   const resetCreateUserForm = () => {
@@ -1814,6 +1889,7 @@ const handleCreateParentAccount = async () => {
                     String(child?.name || '').toLowerCase().includes(search) ||
                     String(child?.age || '').toLowerCase().includes(search) ||
                     String(parent?.name || '').toLowerCase().includes(search) ||
+                    String(parent?.username || '').toLowerCase().includes(search) ||
                     String(parent?.phoneNumber || '').toLowerCase().includes(search) ||
                     String(parent?.email || '').toLowerCase().includes(search)
                   );
@@ -1862,7 +1938,7 @@ const handleCreateParentAccount = async () => {
                           style={styles.iconButton}
                           onPress={(event) => {
                             event.stopPropagation();
-                            handleEditUser(parent);
+                            handleEditUser(parent, child);
                           }}
                         >
                           <Edit2 color={Colors.primary} size={20} />
@@ -2802,11 +2878,50 @@ const handleCreateParentAccount = async () => {
                 <X color={Colors.darkGray} size={24} />
               </TouchableOpacity>
             </View>
-            <View style={styles.form}>
-              <Text style={styles.label}>Name</Text>
-              <TextInput style={styles.input} value={editForm.name} onChangeText={(text) => setEditForm({ ...editForm, name: text })} />
+
+            <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
+              <Text style={styles.label}>Parent Name</Text>
+              <TextInput
+                style={styles.input}
+                value={editForm.name}
+                onChangeText={(text) => setEditForm({ ...editForm, name: text })}
+              />
+
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={styles.input}
+                value={editForm.username}
+                onChangeText={(text) => setEditForm({ ...editForm, username: text })}
+                autoCapitalize="none"
+              />
+
               <Text style={styles.label}>Phone Number</Text>
-              <TextInput style={styles.input} value={editForm.phoneNumber} onChangeText={(text) => setEditForm({ ...editForm, phoneNumber: text })} />
+              <TextInput
+                style={styles.input}
+                value={editForm.phoneNumber}
+                onChangeText={(text) => setEditForm({ ...editForm, phoneNumber: text })}
+                keyboardType="phone-pad"
+              />
+
+              {!!editForm.childId && (
+                <>
+                  <Text style={styles.label}>Child Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editForm.childName}
+                    onChangeText={(text) => setEditForm({ ...editForm, childName: text })}
+                  />
+
+                  <Text style={styles.label}>Child Age</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editForm.childAge}
+                    onChangeText={(text) => setEditForm({ ...editForm, childAge: text })}
+                    keyboardType="number-pad"
+                  />
+                </>
+              )}
+
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={() => setEditingUser(null)}>
                   <Text style={styles.buttonSecondaryText}>Cancel</Text>
@@ -2815,7 +2930,7 @@ const handleCreateParentAccount = async () => {
                   <Text style={styles.buttonPrimaryText}>Save</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       )}
