@@ -6,6 +6,7 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Trophy, Calendar, TrendingUp, Clock, CheckCircle2, AlertCircle } from 'lucide-react-native';
@@ -303,6 +304,151 @@ export default function AdminUserProgressScreen() {
     return isPastSession(session.session_date) ? 'Not marked' : 'Upcoming';
   };
 
+
+  const reloadProgressPage = () => {
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
+
+  const askForDate = (title: string, currentDate?: string) => {
+    if (typeof window !== 'undefined') {
+      return window.prompt(title, currentDate || '')?.trim() || null;
+    }
+
+    Alert.alert('Date editing', 'Date editing is available on web for now.');
+    return null;
+  };
+
+  const updateClassBookingDate = async (bookingId: string, currentDate?: string) => {
+    const newDate = askForDate('Enter new class session date (YYYY-MM-DD)', currentDate);
+    if (!newDate) return;
+
+    const { error } = await supabase
+      .from('bookings')
+      .update({ booking_date: newDate })
+      .eq('id', bookingId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
+  const setClassAttendance = async (bookingId: string, attended: boolean) => {
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        attended,
+        attendance_marked_at: new Date().toISOString(),
+      })
+      .eq('id', bookingId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
+  const cancelClassSession = async (bookingId: string) => {
+    const confirmCancel = typeof window !== 'undefined'
+      ? window.confirm('Cancel this class session?')
+      : true;
+
+    if (!confirmCancel) return;
+
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', bookingId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
+  const updatePrivateSessionDate = async (sessionId: string, currentDate?: string) => {
+    const newDate = askForDate('Enter new private session date (YYYY-MM-DD)', currentDate);
+    if (!newDate) return;
+
+    const { error } = await supabase
+      .from('private_booking_sessions')
+      .update({ session_date: newDate })
+      .eq('id', sessionId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
+  const setPrivateAttendance = async (sessionId: string, attended: boolean) => {
+    const { error } = await supabase
+      .from('private_booking_sessions')
+      .update({
+        attended,
+        attendance_marked_at: new Date().toISOString(),
+      })
+      .eq('id', sessionId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
+  const deletePrivateSession = async (sessionId: string) => {
+    const confirmDelete = typeof window !== 'undefined'
+      ? window.confirm('Delete this private session? This cannot be undone.')
+      : true;
+
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from('private_booking_sessions')
+      .delete()
+      .eq('id', sessionId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
+  const addPrivateSession = async (bookingId: string) => {
+    const newDate = askForDate('Enter new private session date (YYYY-MM-DD)');
+    if (!newDate) return;
+
+    const { error } = await supabase
+      .from('private_booking_sessions')
+      .insert({
+        private_booking_id: bookingId,
+        session_date: newDate,
+        attended: null,
+        note: 'Added manually by admin',
+      });
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    reloadProgressPage();
+  };
+
   const getProgressBarWidth = (percentage: number) => {
     return `${Math.min(Math.max(percentage, 0), 100)}%` as `${number}%`;
   };
@@ -484,6 +630,74 @@ export default function AdminUserProgressScreen() {
         </View>
         )}
 
+        {progressType === 'class' && (
+          <View style={styles.sectionContent}>
+            <View style={styles.sectionHeader}>
+              <Calendar color={Colors.primary} size={20} />
+              <Text style={styles.sectionTitle}>Class Sessions</Text>
+            </View>
+
+            {bookings.filter((booking: any) => booking.status !== 'cancelled').length === 0 ? (
+              <Text style={styles.noDataText}>No class sessions booked yet</Text>
+            ) : (
+              bookings
+                .filter((booking: any) => booking.status !== 'cancelled')
+                .sort((a: any, b: any) => safeDate(a.booking_date).getTime() - safeDate(b.booking_date).getTime())
+                .map((booking: any) => {
+                  const cls = classesMap[String(booking.class_id)];
+
+                  return (
+                    <View key={booking.id} style={styles.sessionHistoryItem}>
+                      <View style={styles.classItemLeft}>
+                        <Text style={styles.classItemName}>{formatDisplayDate(booking.booking_date)}</Text>
+                        <Text style={styles.classItemTime}>
+                          {cls ? `${cls.name} • ${cls.day}, ${cls.time}` : 'Class session'}
+                        </Text>
+                        <Text style={styles.classItemLevel}>
+                          Status: {booking.attended === true ? 'Present' : booking.attended === false ? 'Absent' : 'Not marked'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.sessionActions}>
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.editActionButton]}
+                          onPress={() => updateClassBookingDate(booking.id, booking.booking_date)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Edit Date</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.presentActionButton]}
+                          onPress={() => setClassAttendance(booking.id, true)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Present</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.absentActionButton]}
+                          onPress={() => setClassAttendance(booking.id, false)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Absent</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.deleteActionButton]}
+                          onPress={() => cancelClassSession(booking.id)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+            )}
+          </View>
+        )}
+
         {progressType === 'private' && (
           <>
             <View style={styles.sectionContent}>
@@ -539,6 +753,14 @@ export default function AdminUserProgressScreen() {
                       {!!booking.description && (
                         <Text style={styles.privateDescription}>{booking.description}</Text>
                       )}
+
+                      <TouchableOpacity
+                        style={styles.addSessionButton}
+                        onPress={() => addPrivateSession(booking.id)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.addSessionButtonText}>+ Add Session</Text>
+                      </TouchableOpacity>
                     </View>
                   );
                 })
@@ -567,17 +789,51 @@ export default function AdminUserProgressScreen() {
                         {!!session.note && (
                           <Text style={styles.privateDescription}>Note: {session.note}</Text>
                         )}
+
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            status === 'Present' && styles.statusPresent,
+                            status === 'Absent' && styles.statusAbsent,
+                            status === 'Upcoming' && styles.statusUpcoming,
+                          ]}
+                        >
+                          <Text style={styles.statusBadgeText}>{status}</Text>
+                        </View>
                       </View>
 
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          status === 'Present' && styles.statusPresent,
-                          status === 'Absent' && styles.statusAbsent,
-                          status === 'Upcoming' && styles.statusUpcoming,
-                        ]}
-                      >
-                        <Text style={styles.statusBadgeText}>{status}</Text>
+                      <View style={styles.sessionActions}>
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.editActionButton]}
+                          onPress={() => updatePrivateSessionDate(session.id, session.session_date)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Edit Date</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.presentActionButton]}
+                          onPress={() => setPrivateAttendance(session.id, true)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Present</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.absentActionButton]}
+                          onPress={() => setPrivateAttendance(session.id, false)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Absent</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.sessionActionButton, styles.deleteActionButton]}
+                          onPress={() => deletePrivateSession(session.id)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.sessionActionText}>Delete</Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   );
@@ -878,4 +1134,47 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     color: Colors.text,
   },
+  sessionActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginLeft: 12,
+    maxWidth: 420,
+  },
+  sessionActionButton: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  editActionButton: {
+    backgroundColor: '#E3F2FD',
+  },
+  presentActionButton: {
+    backgroundColor: '#E8F5E9',
+  },
+  absentActionButton: {
+    backgroundColor: '#FFF3E0',
+  },
+  deleteActionButton: {
+    backgroundColor: '#FFEBEE',
+  },
+  sessionActionText: {
+    fontSize: 11,
+    fontWeight: '900' as const,
+    color: Colors.text,
+  },
+  addSessionButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  addSessionButtonText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '900' as const,
+  },
+
 });
