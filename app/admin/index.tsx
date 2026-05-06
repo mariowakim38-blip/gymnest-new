@@ -534,7 +534,80 @@ export default function AdminPanel() {
       { text: 'Delete', style: 'destructive', onPress: deleteUser },
     ]);
   }
-};
+ };
+
+  const handleResetPassword = async (userId: string) => {
+    if (!userId) {
+      const msg = 'Missing auth user ID.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Error', msg);
+      return;
+    }
+
+    let newPassword = '';
+
+    if (Platform.OS === 'web') {
+      const result = window.prompt('Enter new temporary password (minimum 6 characters)');
+      if (!result) return;
+      newPassword = result.trim();
+    } else {
+      const msg = 'Password reset from mobile admin is not supported yet. Please use the web admin panel.';
+      Alert.alert('Use Web Admin', msg);
+      return;
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      const msg = 'Password must be at least 6 characters.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Error', msg);
+      return;
+    }
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        const msg = 'Not authenticated.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Error', msg);
+        return;
+      }
+
+      const response = await fetch(
+        'https://hnkncuqckibrowronjyq.supabase.co/functions/v1/admin-reset-password',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            userId,
+            newPassword,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const msg = result.error || 'Failed to reset password.';
+        if (Platform.OS === 'web') alert(msg);
+        else Alert.alert('Error', msg);
+        return;
+      }
+
+      const msg = 'Password reset successfully.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Success', msg);
+    } catch (error: any) {
+      const msg = error?.message || 'Something went wrong.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Error', msg);
+    }
+  };
 
   const handleEditUser = (u: any, child?: any) => {
     const selectedChild = child || u.children?.[0];
@@ -2030,6 +2103,16 @@ const handleCreateParentAccount = async () => {
                         </TouchableOpacity>
 
                         <TouchableOpacity
+                          style={styles.resetPasswordButton}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            handleResetPassword(parent.userId);
+                          }}
+                        >
+                          <Text style={styles.resetPasswordButtonText}>Reset</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
                           style={styles.iconButton}
                           onPress={(event) => {
                             event.stopPropagation();
@@ -3363,6 +3446,19 @@ const styles = StyleSheet.create({
   cardActions: {
     flexDirection: 'row' as const,
     gap: 8,
+  },
+  resetPasswordButton: {
+    backgroundColor: '#EAF4FF',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetPasswordButtonText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '900' as const,
   },
   iconButton: {
     padding: 8,
