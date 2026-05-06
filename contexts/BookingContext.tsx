@@ -373,7 +373,7 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
 
         if (bookingError) throw bookingError;
 
-        const sessionsCount = cleanPackageHours / cleanSessionDurationHours;
+        const sessionsCount = Math.floor(   cleanPackageHours / cleanSessionDurationHours );
         const dates: Date[] = [];
         const current = new Date(`${startDate}T12:00:00`);
 
