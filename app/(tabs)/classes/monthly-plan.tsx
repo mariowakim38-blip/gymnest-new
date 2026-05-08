@@ -23,13 +23,6 @@ import { useAuth } from '@/contexts/AuthContext';
 const packages = [4, 8, 12, 16, 20, 24, 28, 32];
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const timeSlots = [
-  { time: '4:30 PM', level: 'Beginner' },
-  { time: '5:30 PM', level: 'Intermediate/Advanced' },
-  { time: '6:30 PM', level: 'Intermediate/Advanced' },
-  { time: '7:30 PM', level: 'Intermediate/Advanced' },
-];
-
 const dayMap: Record<string, number> = {
   Sunday: 0,
   Monday: 1,
@@ -66,11 +59,17 @@ export default function MonthlyPlan() {
 
   useEffect(() => {
     const fetchClasses = async () => {
-      const { data, error } = await supabase.from('classes').select('*');
+      const { data, error } = await supabase
+        .from('classes')
+        .select('*')
+        .order('day_of_week', { ascending: true })
+        .order('time', { ascending: true });
+
       if (error) {
         Alert.alert('Error', error.message);
         return;
       }
+
       setClasses(data ?? []);
     };
 
@@ -85,23 +84,38 @@ export default function MonthlyPlan() {
     return Array.from(new Set(selectedSlots.map((slot) => slot.day)));
   }, [selectedSlots]);
 
-  const isSlotSelected = (day: string, time: string) => {
-    return selectedSlots.some((s) => s.day === day && s.time === time);
+  const getSlotsForDay = (day: string) => {
+    return classes
+      .filter((c: any) => String(c.day || '').toLowerCase() === day.toLowerCase())
+      .sort((a: any, b: any) => String(a.time || '').localeCompare(String(b.time || '')))
+      .map((c: any) => ({
+        id: c.id,
+        day: c.day,
+        time: c.time,
+        level: c.level || 'Beginner',
+        ageGroup: c.age_group || c.ageGroup || '',
+        name: c.name || 'Gymnastics Class',
+      }));
+  };
+
+  const isSlotSelected = (day: string, slotId: string) => {
+    return selectedSlots.some((s) => s.day === day && String(s.id) === String(slotId));
   };
 
   const getSelectedSlotsForDay = (day: string) => {
     return selectedSlots.filter((s) => s.day === day);
   };
 
-  const isBeginnerSlot = (slot: any) => slot.level === 'Beginner';
+  const isBeginnerSlot = (slot: any) =>
+    String(slot.level || '').toLowerCase().includes('beginner');
 
   const isSlotDisabled = (day: string, slot: any) => {
     if (!selectedPackage) return true;
-    if (isSlotSelected(day, slot.time)) return false;
+    if (isSlotSelected(day, slot.id)) return false;
 
     const slotsForDay = getSelectedSlotsForDay(day);
-    const hasBeginnerSameDay = slotsForDay.some((s) => s.level === 'Beginner');
-    const hasIntermediateSameDay = slotsForDay.some((s) => s.level !== 'Beginner');
+    const hasBeginnerSameDay = slotsForDay.some((s) => isBeginnerSlot(s));
+    const hasIntermediateSameDay = slotsForDay.some((s) => !isBeginnerSlot(s));
 
     if (hasBeginnerSameDay) return true;
     if (isBeginnerSlot(slot) && hasIntermediateSameDay) return true;
@@ -114,18 +128,18 @@ export default function MonthlyPlan() {
     if (!selectedPackage) return;
 
     const disabled = isSlotDisabled(day, slot);
-    const selected = isSlotSelected(day, slot.time);
+    const selected = isSlotSelected(day, slot.id);
 
     if (disabled && !selected) return;
 
     if (selected) {
       setSelectedSlots((current) =>
-        current.filter((s) => !(s.day === day && s.time === slot.time))
+        current.filter((s) => !(s.day === day && String(s.id) === String(slot.id)))
       );
       return;
     }
 
-    setSelectedSlots((current) => [...current, { day, ...slot }]);
+    setSelectedSlots((current) => [...current, { ...slot, day }]);
   };
 
   const generateDates = (day: string, weeks = 4) => {
@@ -186,9 +200,11 @@ export default function MonthlyPlan() {
     today.setHours(12, 0, 0, 0);
 
     let firstAllowedDate: Date | null = null;
+
     for (let i = 0; i < 14; i += 1) {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
+
       if (isCalendarDateAllowed(d)) {
         firstAllowedDate = d;
         break;
@@ -201,11 +217,7 @@ export default function MonthlyPlan() {
   };
 
   const findMatchingClass = (slot: any) => {
-    return classes.find(
-      (c: any) =>
-        c.day === slot.day &&
-        c.time === slot.time
-    );
+    return classes.find((c: any) => String(c.id) === String(slot.id));
   };
 
   const goHomeAfterConfirmed = () => {
@@ -218,7 +230,10 @@ export default function MonthlyPlan() {
     const student = user?.children?.[0];
 
     if (!user || !student) {
-      Alert.alert('Error', 'No student found. Please log in with a parent account that has a child profile.');
+      Alert.alert(
+        'Error',
+        'No student found. Please log in with a parent account that has a child profile.'
+      );
       return;
     }
 
@@ -251,7 +266,9 @@ export default function MonthlyPlan() {
     }
 
     setConfirming(true);
+
     const { error } = await supabase.from('bookings').insert(allBookings);
+
     setConfirming(false);
 
     if (error) {
@@ -290,10 +307,15 @@ export default function MonthlyPlan() {
 
       <View style={styles.steps}>
         <View style={[styles.stepPill, step === 1 && styles.stepPillActive]}>
-          <Text style={[styles.stepText, step === 1 && styles.stepTextActive]}>1. Schedule</Text>
+          <Text style={[styles.stepText, step === 1 && styles.stepTextActive]}>
+            1. Schedule
+          </Text>
         </View>
+
         <View style={[styles.stepPill, step === 2 && styles.stepPillActive]}>
-          <Text style={[styles.stepText, step === 2 && styles.stepTextActive]}>2. Start Date</Text>
+          <Text style={[styles.stepText, step === 2 && styles.stepTextActive]}>
+            2. Start Date
+          </Text>
         </View>
       </View>
 
@@ -316,9 +338,15 @@ export default function MonthlyPlan() {
                   }}
                   activeOpacity={0.85}
                 >
-                  <Text style={[styles.packageHours, active && styles.packageHoursActive]}>{p}h</Text>
-                  <Text style={[styles.packageLabel, active && styles.packageLabelActive]}>per month</Text>
-                  <Text style={[styles.packageWeekly, active && styles.packageWeeklyActive]}>{p / 4}h/week</Text>
+                  <Text style={[styles.packageHours, active && styles.packageHoursActive]}>
+                    {p}h
+                  </Text>
+                  <Text style={[styles.packageLabel, active && styles.packageLabelActive]}>
+                    per month
+                  </Text>
+                  <Text style={[styles.packageWeekly, active && styles.packageWeeklyActive]}>
+                    {p / 4}h/week
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -328,62 +356,104 @@ export default function MonthlyPlan() {
             <>
               <View style={styles.progressBox}>
                 <Text style={styles.progressTitle}>Select {weeklyHours} hours per week</Text>
-                <Text style={styles.progressText}>Selected: {selectedHours}/{weeklyHours} hours</Text>
+                <Text style={styles.progressText}>
+                  Selected: {selectedHours}/{weeklyHours} hours
+                </Text>
+
                 <View style={styles.progressBar}>
                   <View
                     style={[
                       styles.progressFill,
-                      { width: `${Math.min((selectedHours / weeklyHours) * 100, 100)}%` },
+                      {
+                        width: `${Math.min((selectedHours / weeklyHours) * 100, 100)}%`,
+                      },
                     ]}
                   />
                 </View>
+
                 <Text style={styles.remainingText}>
-                  {remainingHours === 0 ? 'Perfect. You can continue.' : `${remainingHours} hour(s) remaining`}
+                  {remainingHours === 0
+                    ? 'Perfect. You can continue.'
+                    : `${remainingHours} hour(s) remaining`}
                 </Text>
               </View>
 
               {days.map((day) => {
-                const beginnerSelected = selectedSlots.some((s) => s.day === day && s.level === 'Beginner');
+                const slots = getSlotsForDay(day);
+                const beginnerSelected = selectedSlots.some(
+                  (s) => s.day === day && isBeginnerSlot(s)
+                );
 
                 return (
                   <View key={day} style={styles.dayBlock}>
                     <View style={styles.dayHeader}>
                       <Text style={styles.dayTitle}>{day}</Text>
+
                       {beginnerSelected && (
                         <Text style={styles.lockNote}>Beginner day locked to 1h</Text>
                       )}
                     </View>
 
-                    <View style={styles.slotsGrid}>
-                      {timeSlots.map((slot) => {
-                        const selected = isSlotSelected(day, slot.time);
-                        const disabled = isSlotDisabled(day, slot) && !selected;
+                    {slots.length === 0 ? (
+                      <Text style={styles.noSlotsText}>No classes available on {day}.</Text>
+                    ) : (
+                      <View style={styles.slotsGrid}>
+                        {slots.map((slot) => {
+                          const selected = isSlotSelected(day, slot.id);
+                          const disabled = isSlotDisabled(day, slot) && !selected;
 
-                        return (
-                          <TouchableOpacity
-                            key={slot.time}
-                            style={[
-                              styles.slotCard,
-                              selected && styles.slotCardSelected,
-                              disabled && styles.slotCardDisabled,
-                            ]}
-                            disabled={disabled}
-                            onPress={() => handleSelectSlot(day, slot)}
-                            activeOpacity={0.85}
-                          >
-                            <View style={styles.slotTopRow}>
-                              <Text style={[styles.slotTime, selected && styles.slotTextSelected, disabled && styles.disabledText]}>
-                                {slot.time}
+                          return (
+                            <TouchableOpacity
+                              key={slot.id}
+                              style={[
+                                styles.slotCard,
+                                selected && styles.slotCardSelected,
+                                disabled && styles.slotCardDisabled,
+                              ]}
+                              disabled={disabled}
+                              onPress={() => handleSelectSlot(day, slot)}
+                              activeOpacity={0.85}
+                            >
+                              <View style={styles.slotTopRow}>
+                                <Text
+                                  style={[
+                                    styles.slotTime,
+                                    selected && styles.slotTextSelected,
+                                    disabled && styles.disabledText,
+                                  ]}
+                                >
+                                  {slot.time}
+                                </Text>
+
+                                {disabled && <Lock color={Colors.textLight} size={13} />}
+                              </View>
+
+                              <Text
+                                style={[
+                                  styles.slotLevel,
+                                  selected && styles.slotTextSelected,
+                                  disabled && styles.disabledText,
+                                ]}
+                              >
+                                {slot.level}
                               </Text>
-                              {disabled && <Lock color={Colors.textLight} size={13} />}
-                            </View>
-                            <Text style={[styles.slotLevel, selected && styles.slotTextSelected, disabled && styles.disabledText]}>
-                              {slot.level}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
+
+                              {!!slot.ageGroup && (
+                                <Text
+                                  style={[
+                                    styles.slotAgeGroup,
+                                    selected && styles.slotTextSelected,
+                                    disabled && styles.disabledText,
+                                  ]}
+                                >
+                                  {slot.ageGroup}
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
                 );
               })}
@@ -408,36 +478,50 @@ export default function MonthlyPlan() {
               <Text style={styles.reviewTitle}>Schedule Summary</Text>
             </View>
 
-            <Text style={styles.reviewText}>Package: {selectedPackage}h/month • {weeklyHours}h/week</Text>
-            <Text style={styles.allowedDaysText}>Calendar enabled days: {selectedDays.join(', ')}</Text>
+            <Text style={styles.reviewText}>
+              Package: {selectedPackage}h/month • {weeklyHours}h/week
+            </Text>
+
+            <Text style={styles.allowedDaysText}>
+              Calendar enabled days: {selectedDays.join(', ')}
+            </Text>
 
             {selectedSlots.map((slot, index) => (
-              <Text key={`${slot.day}-${slot.time}-${index}`} style={styles.reviewItem}>
+              <Text key={`${slot.id}-${index}`} style={styles.reviewItem}>
                 {slot.day} — {slot.time} — {slot.level}
               </Text>
             ))}
           </View>
 
           <Text style={styles.sectionTitle}>Choose Start Date</Text>
-          <Text style={styles.calendarHint}>Only the days selected in your weekly schedule are available.</Text>
+          <Text style={styles.calendarHint}>
+            Only the days selected in your weekly schedule are available.
+          </Text>
 
           <View style={styles.calendarCard}>
             <View style={styles.calendarHeader}>
               <TouchableOpacity
                 onPress={() =>
-                  setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))
+                  setCalendarMonth(
+                    new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1)
+                  )
                 }
               >
                 <ChevronLeft size={24} color={Colors.primary} />
               </TouchableOpacity>
 
               <Text style={styles.calendarTitle}>
-                {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                {calendarMonth.toLocaleDateString('en-US', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
               </Text>
 
               <TouchableOpacity
                 onPress={() =>
-                  setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))
+                  setCalendarMonth(
+                    new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1)
+                  )
                 }
               >
                 <ChevronRight size={24} color={Colors.primary} />
@@ -446,7 +530,9 @@ export default function MonthlyPlan() {
 
             <View style={styles.weekRow}>
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                <Text key={d} style={styles.weekDay}>{d}</Text>
+                <Text key={d} style={styles.weekDay}>
+                  {d}
+                </Text>
               ))}
             </View>
 
@@ -454,7 +540,8 @@ export default function MonthlyPlan() {
               {calendarDates.map((date, index) => {
                 const sameMonth = date.getMonth() === calendarMonth.getMonth();
                 const allowed = isCalendarDateAllowed(date);
-                const selected = startDate && formatLocalDate(date) === formatLocalDate(startDate);
+                const selected =
+                  startDate && formatLocalDate(date) === formatLocalDate(startDate);
 
                 return (
                   <TouchableOpacity
@@ -547,6 +634,7 @@ const styles = StyleSheet.create({
   dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 },
   dayTitle: { fontSize: 17, fontWeight: '900', color: Colors.text },
   lockNote: { fontSize: 12, fontWeight: '800', color: Colors.primary, backgroundColor: '#EAF4FF', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999 },
+  noSlotsText: { color: Colors.textLight, fontWeight: '700', paddingVertical: 8 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   slotCard: { width: '48%', padding: 12, borderRadius: 14, backgroundColor: '#F5F7FA', borderWidth: 1, borderColor: '#E2E8F0' },
   slotCardSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
@@ -554,6 +642,7 @@ const styles = StyleSheet.create({
   slotTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   slotTime: { fontSize: 15, fontWeight: '900', color: Colors.text },
   slotLevel: { fontSize: 12, color: Colors.textLight, marginTop: 4, fontWeight: '700' },
+  slotAgeGroup: { fontSize: 11, color: Colors.textLight, marginTop: 2, fontWeight: '700' },
   slotTextSelected: { color: '#fff' },
   disabledText: { color: Colors.textLight },
   primaryButton: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 16 },
