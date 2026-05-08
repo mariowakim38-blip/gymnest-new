@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useRouter } from 'expo-router';
+import { useRouter, Href } from 'expo-router';
 import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -91,7 +91,8 @@ export default function PrivateBookingScreen() {
           package_hours: packageHours,
           session_duration_hours: sessionDuration,
           start_date: startDate,
-          selected_weekday: DAYS.find((d) => d.value === weekday)?.label || 'Monday',
+          selected_weekday:
+            DAYS.find((d) => d.value === weekday)?.label || 'Monday',
           status: 'active',
         })
         .select()
@@ -118,12 +119,16 @@ export default function PrivateBookingScreen() {
         return;
       }
 
-      Alert.alert('Success', 'Private booking created successfully.', [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
-      ]);
+      Alert.alert(
+        'Booking Confirmed ✅',
+        'Your private sessions have been booked successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(tabs)' as Href),
+          },
+        ]
+      );
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Something went wrong.');
     } finally {
@@ -132,13 +137,18 @@ export default function PrivateBookingScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+    >
       <Text style={styles.title}>Private Sessions</Text>
+
       <Text style={styles.subtitle}>
         Choose your child, package, weekday, and start date.
       </Text>
 
       <Text style={styles.label}>Select Child</Text>
+
       <View style={styles.rowWrap}>
         {(user?.children || []).map((child) => (
           <TouchableOpacity
@@ -162,6 +172,7 @@ export default function PrivateBookingScreen() {
       </View>
 
       <Text style={styles.label}>Select Package</Text>
+
       <View style={styles.row}>
         {[4, 8, 16].map((h) => (
           <TouchableOpacity
@@ -185,6 +196,7 @@ export default function PrivateBookingScreen() {
       </View>
 
       <Text style={styles.label}>Session Duration</Text>
+
       <View style={styles.row}>
         {[1, 2].map((h) => (
           <TouchableOpacity
@@ -208,6 +220,7 @@ export default function PrivateBookingScreen() {
       </View>
 
       <Text style={styles.label}>Select Day</Text>
+
       <View style={styles.rowWrap}>
         {DAYS.map((d) => (
           <TouchableOpacity
@@ -261,6 +274,7 @@ export default function PrivateBookingScreen() {
               display="default"
               onChange={(_, selectedDate) => {
                 setShowDatePicker(false);
+
                 if (selectedDate) {
                   setStartDate(formatDate(selectedDate));
                 }
@@ -271,25 +285,37 @@ export default function PrivateBookingScreen() {
       )}
 
       <Text style={styles.label}>Description / Notes</Text>
+
       <TextInput
         value={description}
         onChangeText={setDescription}
-        placeholder="Example: private work on flexibility, back walkover, handstand..."
+        placeholder="Example: flexibility, handstand, back walkover..."
         style={[styles.input, styles.textArea]}
         multiline
       />
 
       <View style={styles.summaryBox}>
         <Text style={styles.summaryTitle}>Summary</Text>
-        <Text style={styles.summaryText}>Child: {selectedChild?.name || 'Not selected'}</Text>
-        <Text style={styles.summaryText}>Package: {packageHours} hours</Text>
+
+        <Text style={styles.summaryText}>
+          Child: {selectedChild?.name || 'Not selected'}
+        </Text>
+
+        <Text style={styles.summaryText}>
+          Package: {packageHours} hours
+        </Text>
+
         <Text style={styles.summaryText}>
           Sessions: {Math.ceil(packageHours / sessionDuration)}
         </Text>
+
         <Text style={styles.summaryText}>
           Day: {DAYS.find((d) => d.value === weekday)?.label}
         </Text>
-        <Text style={styles.summaryText}>Start: {startDate}</Text>
+
+        <Text style={styles.summaryText}>
+          Start: {startDate}
+        </Text>
       </View>
 
       <TouchableOpacity
@@ -310,21 +336,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F4F7FB',
   },
+
   content: {
     padding: 20,
     paddingBottom: 40,
   },
+
   title: {
     fontSize: 28,
     fontWeight: '900',
     color: Colors.text,
     marginBottom: 6,
   },
+
   subtitle: {
     fontSize: 15,
     color: Colors.textLight,
     marginBottom: 20,
   },
+
   label: {
     fontSize: 14,
     fontWeight: '800',
@@ -332,31 +362,38 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
+
   row: {
     flexDirection: 'row',
     gap: 10,
   },
+
   rowWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
+
   option: {
     backgroundColor: '#E5E7EB',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
+
   optionActive: {
     backgroundColor: Colors.primary,
   },
+
   optionText: {
     color: Colors.text,
     fontWeight: '800',
   },
+
   optionTextActive: {
     color: Colors.white,
   },
+
   dateButton: {
     backgroundColor: Colors.white,
     borderRadius: 12,
@@ -364,11 +401,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
+
   dateButtonText: {
     fontSize: 16,
     color: Colors.text,
     fontWeight: '700',
   },
+
   input: {
     backgroundColor: Colors.white,
     borderRadius: 12,
@@ -378,10 +417,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
   },
+
   textArea: {
     minHeight: 90,
     textAlignVertical: 'top',
   },
+
   summaryBox: {
     backgroundColor: Colors.white,
     borderRadius: 16,
@@ -390,17 +431,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
+
   summaryTitle: {
     fontSize: 16,
     fontWeight: '900',
     color: Colors.text,
     marginBottom: 8,
   },
+
   summaryText: {
     fontSize: 14,
     color: Colors.textLight,
     marginTop: 3,
   },
+
   button: {
     backgroundColor: Colors.primary,
     borderRadius: 16,
@@ -408,9 +452,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 22,
   },
+
   buttonDisabled: {
     opacity: 0.6,
   },
+
   buttonText: {
     color: Colors.white,
     fontSize: 16,
