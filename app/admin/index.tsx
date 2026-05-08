@@ -1186,13 +1186,11 @@ export default function AdminPanel() {
   };
 
   const handleMarkAttendance = async (bookingId: string, attended: boolean) => {
-    const markedAt = new Date().toISOString();
-
     const { error } = await supabase
       .from("bookings")
       .update({
         attended,
-        attendance_marked_at: markedAt,
+        attendance_marked_at: new Date().toISOString(),
       })
       .eq("id", bookingId);
 
@@ -1201,12 +1199,6 @@ export default function AdminPanel() {
       Alert.alert("Attendance Error", error.message);
       return;
     }
-
-    updateEditingBookingItem(bookingId, {
-      attended,
-      attendanceMarkedAt: markedAt,
-      attendance_marked_at: markedAt,
-    });
 
     await refreshBookings();
   };
@@ -4543,12 +4535,7 @@ export default function AdminPanel() {
                               : "No date selected"}
                           </Text>
                           <Text style={styles.bookingManageDateSubtext}>
-                            Status: {booking.status || "confirmed"} • Attendance:{" "}
-                            {booking.attended === true
-                              ? "Present"
-                              : booking.attended === false
-                                ? "Absent"
-                                : "Not marked"}
+                            Status: {booking.status || "confirmed"}
                           </Text>
                         </View>
                       </View>
@@ -4557,12 +4544,13 @@ export default function AdminPanel() {
                         <input
                           type="date"
                           value={draftDate}
-                          onChange={(event) =>
+                          onChange={(event: any) => {
+                            const nextValue = event?.target?.value || '';
                             setBookingDateDrafts((current) => ({
                               ...current,
-                              [bookingId]: event.currentTarget.value,
-                            }))
-                          }
+                              [bookingId]: nextValue,
+                            }));
+                          }}
                           style={{
                             width: "100%",
                             padding: 12,
@@ -4598,32 +4586,6 @@ export default function AdminPanel() {
                         >
                           <Text style={styles.bookingManageActionText}>
                             Save Date
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.bookingManageActionButton,
-                            styles.bookingManagePresentButton,
-                          ]}
-                          onPress={() => handleMarkAttendance(bookingId, true)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.bookingManageActionText}>
-                            Present
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.bookingManageActionButton,
-                            styles.bookingManageAbsentButton,
-                          ]}
-                          onPress={() => handleMarkAttendance(bookingId, false)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.bookingManageActionText}>
-                            Absent
                           </Text>
                         </TouchableOpacity>
 
@@ -5839,12 +5801,6 @@ const styles = StyleSheet.create({
   },
   bookingManageCancelButton: {
     backgroundColor: "#F59E0B",
-  },
-  bookingManagePresentButton: {
-    backgroundColor: Colors.success,
-  },
-  bookingManageAbsentButton: {
-    backgroundColor: "#64748B",
   },
   bookingManageDeleteButton: {
     backgroundColor: Colors.danger,
