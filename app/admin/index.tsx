@@ -843,6 +843,28 @@ export default function AdminPanel() {
       }
     }
 
+    setAllUsers((prev) =>
+      prev.map((u) =>
+        String(u.id) === String(editingUser.id)
+          ? {
+              ...u,
+              name: cleanName,
+              username: cleanUsername,
+              phoneNumber: cleanPhone,
+              children: (u.children || []).map((child: any) =>
+                String(child.id) === String(editForm.childId)
+                  ? {
+                      ...child,
+                      name: cleanChildName,
+                      age: cleanChildAge,
+                    }
+                  : child,
+              ),
+            }
+          : u,
+      ),
+    );
+
     await refreshUsers();
     setEditingUser(null);
 
