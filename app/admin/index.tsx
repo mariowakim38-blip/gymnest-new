@@ -1186,11 +1186,13 @@ export default function AdminPanel() {
   };
 
   const handleMarkAttendance = async (bookingId: string, attended: boolean) => {
+    const markedAt = new Date().toISOString();
+
     const { error } = await supabase
       .from("bookings")
       .update({
         attended,
-        attendance_marked_at: new Date().toISOString(),
+        attendance_marked_at: markedAt,
       })
       .eq("id", bookingId);
 
@@ -1199,6 +1201,12 @@ export default function AdminPanel() {
       Alert.alert("Attendance Error", error.message);
       return;
     }
+
+    updateEditingBookingItem(bookingId, {
+      attended,
+      attendanceMarkedAt: markedAt,
+      attendance_marked_at: markedAt,
+    });
 
     await refreshBookings();
   };
@@ -4535,7 +4543,12 @@ export default function AdminPanel() {
                               : "No date selected"}
                           </Text>
                           <Text style={styles.bookingManageDateSubtext}>
-                            Status: {booking.status || "confirmed"}
+                            Status: {booking.status || "confirmed"} • Attendance:{" "}
+                            {booking.attended === true
+                              ? "Present"
+                              : booking.attended === false
+                                ? "Absent"
+                                : "Not marked"}
                           </Text>
                         </View>
                       </View>
@@ -4585,6 +4598,32 @@ export default function AdminPanel() {
                         >
                           <Text style={styles.bookingManageActionText}>
                             Save Date
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.bookingManageActionButton,
+                            styles.bookingManagePresentButton,
+                          ]}
+                          onPress={() => handleMarkAttendance(bookingId, true)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.bookingManageActionText}>
+                            Present
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.bookingManageActionButton,
+                            styles.bookingManageAbsentButton,
+                          ]}
+                          onPress={() => handleMarkAttendance(bookingId, false)}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.bookingManageActionText}>
+                            Absent
                           </Text>
                         </TouchableOpacity>
 
@@ -5800,6 +5839,12 @@ const styles = StyleSheet.create({
   },
   bookingManageCancelButton: {
     backgroundColor: "#F59E0B",
+  },
+  bookingManagePresentButton: {
+    backgroundColor: Colors.success,
+  },
+  bookingManageAbsentButton: {
+    backgroundColor: "#64748B",
   },
   bookingManageDeleteButton: {
     backgroundColor: Colors.danger,
