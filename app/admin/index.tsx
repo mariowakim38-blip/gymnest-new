@@ -843,30 +843,34 @@ export default function AdminPanel() {
       }
     }
 
+    const updatedUser = {
+      ...editingUser,
+      name: cleanName,
+      username: cleanUsername,
+      phoneNumber: cleanPhone,
+      children: (editingUser.children || []).map((child: any) =>
+        String(child.id) === String(editForm.childId)
+          ? {
+              ...child,
+              name: cleanChildName,
+              age: cleanChildAge,
+            }
+          : child,
+      ),
+    };
+
     setAllUsers((prev) =>
       prev.map((u) =>
-        String(u.id) === String(editingUser.id)
-          ? {
-              ...u,
-              name: cleanName,
-              username: cleanUsername,
-              phoneNumber: cleanPhone,
-              children: (u.children || []).map((child: any) =>
-                String(child.id) === String(editForm.childId)
-                  ? {
-                      ...child,
-                      name: cleanChildName,
-                      age: cleanChildAge,
-                    }
-                  : child,
-              ),
-            }
-          : u,
+        String(u.id) === String(editingUser.id) ? updatedUser : u,
       ),
     );
 
-    await refreshUsers();
     setEditingUser(null);
+
+    setTimeout(async () => {
+      await refreshUsers();
+      await refreshBookings();
+    }, 300);
 
     const msg = "User updated successfully.";
     if (Platform.OS === "web") alert(msg);
