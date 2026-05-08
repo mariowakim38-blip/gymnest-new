@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -61,6 +62,7 @@ export default function MonthlyPlan() {
   const [calendarMonth, setCalendarMonth] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     const fetchClasses = async () => {
@@ -101,13 +103,8 @@ export default function MonthlyPlan() {
     const hasBeginnerSameDay = slotsForDay.some((s) => s.level === 'Beginner');
     const hasIntermediateSameDay = slotsForDay.some((s) => s.level !== 'Beginner');
 
-    // HARD RULE 1: If Beginner 4:30 is selected, no other class can be selected that day.
     if (hasBeginnerSameDay) return true;
-
-    // HARD RULE 2: If Intermediate/Advanced is already selected that day, Beginner becomes unavailable.
     if (isBeginnerSlot(slot) && hasIntermediateSameDay) return true;
-
-    // HARD RULE 3: Cannot exceed package weekly hours.
     if (selectedHours >= weeklyHours) return true;
 
     return false;
@@ -211,7 +208,13 @@ export default function MonthlyPlan() {
     );
   };
 
+  const goHomeAfterConfirmed = () => {
+    router.replace('/' as any);
+  };
+
   const handleConfirm = async () => {
+    if (confirming) return;
+
     const student = user?.children?.[0];
 
     if (!user || !student) {
@@ -247,10 +250,18 @@ export default function MonthlyPlan() {
       }
     }
 
+    setConfirming(true);
     const { error } = await supabase.from('bookings').insert(allBookings);
+    setConfirming(false);
 
     if (error) {
       Alert.alert('Booking Error', error.message);
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      window.alert('Booking Confirmed ✅\n\nYour class schedule has been successfully booked.');
+      goHomeAfterConfirmed();
       return;
     }
 
@@ -260,9 +271,10 @@ export default function MonthlyPlan() {
       [
         {
           text: 'OK',
-          onPress: () => router.replace('/classes'),
+          onPress: goHomeAfterConfirmed,
         },
-      ]
+      ],
+      { cancelable: false }
     );
   };
 
@@ -480,11 +492,13 @@ export default function MonthlyPlan() {
           </View>
 
           <TouchableOpacity
-            style={[styles.primaryButton, !startDate && styles.disabledButton]}
-            disabled={!startDate}
+            style={[styles.primaryButton, (!startDate || confirming) && styles.disabledButton]}
+            disabled={!startDate || confirming}
             onPress={handleConfirm}
           >
-            <Text style={styles.primaryButtonText}>Confirm Monthly Booking</Text>
+            <Text style={styles.primaryButtonText}>
+              {confirming ? 'Confirming...' : 'Confirm Monthly Booking'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.secondaryButton} onPress={() => setStep(1)}>
