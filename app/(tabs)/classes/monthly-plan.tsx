@@ -179,14 +179,6 @@ export default function MonthlyPlan() {
   }, [calendarMonth]);
 
   const isCalendarDateAllowed = (date: Date) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const check = new Date(date);
-    check.setHours(0, 0, 0, 0);
-
-    if (check < today) return false;
-
     const dayName = getDayName(date);
     return selectedDays.includes(dayName);
   };
@@ -199,19 +191,7 @@ export default function MonthlyPlan() {
     const today = new Date();
     today.setHours(12, 0, 0, 0);
 
-    let firstAllowedDate: Date | null = null;
-
-    for (let i = 0; i < 14; i += 1) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
-
-      if (isCalendarDateAllowed(d)) {
-        firstAllowedDate = d;
-        break;
-      }
-    }
-
-    setStartDate(firstAllowedDate);
+    setStartDate(today);
     setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
     setStep(2);
   };
