@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { User, Mail, Lock, Phone, Baby } from 'lucide-react-native';
+import { User, Lock, Phone, Baby } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,7 +26,6 @@ export default function RegisterScreen() {
   const [parentFirstName, setParentFirstName] = useState('');
   const [parentLastName, setParentLastName] = useState('');
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -49,7 +48,6 @@ export default function RegisterScreen() {
       !parentFirstName.trim() ||
       !parentLastName.trim() ||
       !username.trim() ||
-      !email.trim() ||
       !phoneNumber.trim() ||
       !password ||
       !confirmPassword ||
@@ -57,6 +55,11 @@ export default function RegisterScreen() {
       !childAge.trim()
     ) {
       Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (username.trim().includes(' ')) {
+      Alert.alert('Error', 'Username cannot contain spaces');
       return;
     }
 
@@ -105,7 +108,6 @@ export default function RegisterScreen() {
       const result = await register(
         parentFullName,
         username.trim(),
-        email.trim(),
         password,
         cleanPhone,
         childFullName,
@@ -159,12 +161,7 @@ export default function RegisterScreen() {
 
           <View style={styles.inputContainer}>
             <User color={Colors.mediumGray} size={20} />
-            <TextInput style={styles.input} placeholder="Username *" value={username} onChangeText={setUsername} autoCapitalize="none" placeholderTextColor={Colors.mediumGray} />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Mail color={Colors.mediumGray} size={20} />
-            <TextInput style={styles.input} placeholder="Email *" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholderTextColor={Colors.mediumGray} />
+            <TextInput style={styles.input} placeholder="Username *" value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholderTextColor={Colors.mediumGray} />
           </View>
 
           <View style={styles.inputContainer}>
