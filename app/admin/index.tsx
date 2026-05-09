@@ -810,33 +810,52 @@ export default function AdminPanel() {
       return;
     }
 
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .update({
-        name: cleanName,
-        username: cleanUsername,
-        phone_number: cleanPhone,
-      })
-      .eq("id", editingUser.id);
+    const profilePatch = {
+      name: cleanName,
+      username: cleanUsername,
+      phone_number: cleanPhone,
+    };
 
-    if (profileError) {
-      const msg = profileError.message || "Failed to update parent.";
+    let profileUpdate = await supabase
+      .from("profiles")
+      .update(profilePatch)
+      .eq("user_id", editingUser.userId)
+      .select("id, user_id, name, username, phone_number")
+      .maybeSingle();
+
+    if ((!profileUpdate.data || profileUpdate.error) && editingUser.id) {
+      profileUpdate = await supabase
+        .from("profiles")
+        .update(profilePatch)
+        .eq("id", editingUser.id)
+        .select("id, user_id, name, username, phone_number")
+        .maybeSingle();
+    }
+
+    if (profileUpdate.error || !profileUpdate.data) {
+      const msg =
+        profileUpdate.error?.message ||
+        "Parent was not updated. Profile row was not found.";
       if (Platform.OS === "web") alert(msg);
       else Alert.alert("Error", msg);
       return;
     }
 
     if (editForm.childId) {
-      const { error: childError } = await supabase
+      const childUpdate = await supabase
         .from("children")
         .update({
           name: cleanChildName,
           age: cleanChildAge,
         })
-        .eq("id", editForm.childId);
+        .eq("id", editForm.childId)
+        .select("id, name, age")
+        .maybeSingle();
 
-      if (childError) {
-        const msg = childError.message || "Failed to update child.";
+      if (childUpdate.error || !childUpdate.data) {
+        const msg =
+          childUpdate.error?.message ||
+          "Child was not updated. Child row was not found.";
         if (Platform.OS === "web") alert(msg);
         else Alert.alert("Error", msg);
         return;
@@ -845,9 +864,11 @@ export default function AdminPanel() {
 
     const updatedUser = {
       ...editingUser,
-      name: cleanName,
-      username: cleanUsername,
-      phoneNumber: cleanPhone,
+      id: profileUpdate.data.id || editingUser.id,
+      userId: profileUpdate.data.user_id || editingUser.userId,
+      name: profileUpdate.data.name ?? cleanName,
+      username: profileUpdate.data.username ?? cleanUsername,
+      phoneNumber: profileUpdate.data.phone_number ?? cleanPhone,
       children: (editingUser.children || []).map((child: any) =>
         String(child.id) === String(editForm.childId)
           ? {
@@ -861,16 +882,17 @@ export default function AdminPanel() {
 
     setAllUsers((prev) =>
       prev.map((u) =>
-        String(u.id) === String(editingUser.id) ? updatedUser : u,
+        String(u.id) === String(editingUser.id) ||
+        String(u.userId) === String(editingUser.userId)
+          ? updatedUser
+          : u,
       ),
     );
 
     setEditingUser(null);
 
-    setTimeout(async () => {
-      await refreshUsers();
-      await refreshBookings();
-    }, 300);
+    await refreshUsers();
+    await refreshBookings();
 
     const msg = "User updated successfully.";
     if (Platform.OS === "web") alert(msg);
