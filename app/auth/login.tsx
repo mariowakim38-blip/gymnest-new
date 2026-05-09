@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
-import { Mail, Lock } from 'lucide-react-native';
+import { User, Lock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,20 +23,20 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
+    if (!username.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please enter username and password');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const result = await login(email.trim(), password);
+      const result = await login(username.trim(), password);
 
       if (result.success) {
         const destination =
@@ -63,7 +63,7 @@ export default function LoginScreen() {
 
         {/* HEADER */}
         <LinearGradient colors={[Colors.primary, '#2a3f5f']} style={styles.header}>
-          
+
           <View style={styles.logoCircle}>
             <Image source={LOGO} style={styles.logo} resizeMode="contain" />
           </View>
@@ -76,15 +76,15 @@ export default function LoginScreen() {
         <View style={styles.formContainer}>
 
           <View style={styles.inputContainer}>
-            <Mail color={Colors.mediumGray} size={20} />
+            <User color={Colors.mediumGray} size={20} />
             <TextInput
               style={styles.input}
-              placeholder="Email"
+              placeholder="Username"
               placeholderTextColor={Colors.mediumGray}
-              value={email}
-              onChangeText={setEmail}
+              value={username}
+              onChangeText={setUsername}
               autoCapitalize="none"
-              keyboardType="email-address"
+              autoCorrect={false}
             />
           </View>
 
