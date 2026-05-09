@@ -24,6 +24,14 @@ type AuthResult = {
   user?: User | null;
 };
 
+const USERNAME_EMAIL_DOMAIN = 'gymnest.local';
+
+const normalizeUsername = (username: string) =>
+  username.trim().toLowerCase().replace(/\s+/g, '');
+
+const usernameToInternalEmail = (username: string) =>
+  `${normalizeUsername(username)}@${USERNAME_EMAIL_DOMAIN}`;
+
 export const [AuthProvider, useAuth] = createContextHook(() => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -176,13 +184,22 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('Admin account must be created in Supabase dashboard.');
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
+  const login = useCallback(async (username: string, password: string): Promise<AuthResult> => {
     try {
       setIsLoading(true);
-      console.log('Login - Attempting login for:', email);
+
+      const cleanUsername = normalizeUsername(username);
+
+      if (!cleanUsername) {
+        return { success: false, error: 'Please enter your username' };
+      }
+
+      const internalEmail = usernameToInternalEmail(cleanUsername);
+
+      console.log('Login - Attempting login for username:', cleanUsername);
 
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: internalEmail,
         password,
       });
 
@@ -208,7 +225,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         };
       }
 
-      console.log('Login successful for:', email, 'role:', loadedUser.role);
+      console.log('Login successful for username:', cleanUsername, 'role:', loadedUser.role);
       return { success: true, user: loadedUser };
     } catch (error) {
       console.error('Login failed:', error);
@@ -258,7 +275,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const register = useCallback(async (
     name: string,
     username: string,
-    email: string,
     password: string,
     phoneNumber: string,
     childName: string,
@@ -270,10 +286,32 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     setIsLoading(true);
 
     try {
-      console.log('Registration - Attempting registration for:', username);
+      const cleanUsername = normalizeUsername(username);
+
+      if (!cleanUsername) {
+        return { success: false, error: 'Please enter a username' };
+      }
+
+      const internalEmail = usernameToInternalEmail(cleanUsername);
+
+      console.log('Registration - Attempting registration for username:', cleanUsername);
+
+      const { data: existingProfile, error: existingProfileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', cleanUsername)
+        .maybeSingle();
+
+      if (existingProfileError) {
+        return { success: false, error: existingProfileError.message };
+      }
+
+      if (existingProfile) {
+        return { success: false, error: 'This username is already taken' };
+      }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: internalEmail,
         password,
       });
 
@@ -300,7 +338,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         .insert({
           user_id: authData.user.id,
           name,
-          username,
+          username: cleanUsername,
           phone_number: phoneNumber.startsWith('+961') ? phoneNumber : `+961${phoneNumber}`,
           role: isAdmin ? 'admin' : 'parent',
         })
@@ -331,7 +369,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
 
       const loadedUser = await loadUserProfile(authData.user.id);
-      console.log('Registration successful for:', username);
+      console.log('Registration successful for username:', cleanUsername);
       return { success: true, user: loadedUser };
     } catch (error) {
       console.error('Registration failed:', error);
