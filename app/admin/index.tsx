@@ -2755,6 +2755,9 @@ export default function AdminPanel() {
                   <Text style={styles.attendanceSubtitle}>
                     Search and tap a student to view their progress.
                   </Text>
+                  <Text style={styles.userCountText}>
+                    Total Users: {allUsers.length}
+                  </Text>
                 </View>
 
                 <TouchableOpacity
@@ -2846,11 +2849,9 @@ export default function AdminPanel() {
                             </Text>
                           )}
 
-                          {!!parent.email && (
-                            <Text style={styles.userDetail}>
-                              {parent.email}
-                            </Text>
-                          )}
+                          <Text style={styles.userDetail}>
+                            Email: {parent.email || "No email"}
+                          </Text>
 
                           <Text style={styles.userDetail}>
                             {child?.id
@@ -5183,6 +5184,12 @@ const styles = StyleSheet.create({
   userDetail: {
     fontSize: 13,
     color: Colors.mediumGray,
+  },
+  userCountText: {
+    color: Colors.textLight,
+    fontSize: 14,
+    fontWeight: "800" as const,
+    marginTop: 4,
   },
   bookingInfo: {
     flex: 1,
