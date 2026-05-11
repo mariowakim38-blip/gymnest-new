@@ -21,7 +21,56 @@ import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
-const packages = [4, 8, 12, 16, 20, 24, 28, 32];
+type PackageOption = {
+  label: string;
+  hours: number;
+  type: 'regular' | 'competition';
+  weeklyHours?: number;
+  maxDaysPerWeek?: number;
+  maxHoursPerDay?: number;
+};
+
+const packages: PackageOption[] = [
+  { label: '4h', hours: 4, type: 'regular' },
+  { label: '8h', hours: 8, type: 'regular' },
+  { label: '12h', hours: 12, type: 'regular' },
+  { label: '16h', hours: 16, type: 'regular' },
+  { label: '20h', hours: 20, type: 'regular' },
+  { label: '24h', hours: 24, type: 'regular' },
+  { label: '28h', hours: 28, type: 'regular' },
+  { label: '32h', hours: 32, type: 'regular' },
+
+  // Competition Team: 5 days/week × 2h/day = 10h/week = 40h/month
+  {
+    label: 'Competition Daily 2H',
+    hours: 40,
+    type: 'competition',
+    weeklyHours: 10,
+    maxDaysPerWeek: 5,
+    maxHoursPerDay: 2,
+  },
+
+  // Competition Team: 4 days/week × 3h/day = 12h/week = 48h/month
+  {
+    label: 'Competition 4D × 3H',
+    hours: 48,
+    type: 'competition',
+    weeklyHours: 12,
+    maxDaysPerWeek: 4,
+    maxHoursPerDay: 3,
+  },
+
+  // Competition Team: 5 days/week × 3h/day = 15h/week = 60h/month
+  {
+    label: 'Competition 5D × 3H',
+    hours: 60,
+    type: 'competition',
+    weeklyHours: 15,
+    maxDaysPerWeek: 5,
+    maxHoursPerDay: 3,
+  },
+];
+
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const dayMap: Record<string, number> = {
@@ -49,7 +98,7 @@ export default function MonthlyPlan() {
   const { user } = useAuth();
 
   const [step, setStep] = useState<1 | 2>(1);
-  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<PackageOption | null>(null);
   const [extraHoursInput, setExtraHoursInput] = useState<string>('');
   const [selectedSlots, setSelectedSlots] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -78,11 +127,22 @@ export default function MonthlyPlan() {
     fetchClasses();
   }, []);
 
-  const weeklyHours = selectedPackage ? selectedPackage / 4 : 0;
+  const weeklyHours = selectedPackage
+    ? selectedPackage.weeklyHours || selectedPackage.hours / 4
+    : 0;
+
   const cleanExtraHours = Math.max(0, Math.floor(Number(extraHoursInput) || 0));
-  const extraHours = selectedPackage ? cleanExtraHours : 0;
-  const totalMonthlyHours = selectedPackage ? selectedPackage + extraHours : 0;
-  const totalWeeks = selectedPackage && weeklyHours > 0 ? 4 + Math.ceil(extraHours / weeklyHours) : 4;
+
+  // Extra hours stay only for regular monthly packages.
+  // Competition Team packages use fixed training hours.
+  const extraHours =
+    selectedPackage && selectedPackage.type === 'regular' ? cleanExtraHours : 0;
+
+  const totalMonthlyHours = selectedPackage ? selectedPackage.hours + extraHours : 0;
+
+  const totalWeeks =
+    selectedPackage && weeklyHours > 0 ? 4 + Math.ceil(extraHours / weeklyHours) : 4;
+
   const selectedHours = selectedSlots.length;
   const remainingHours = weeklyHours - selectedHours;
 
@@ -123,8 +183,36 @@ export default function MonthlyPlan() {
     const hasBeginnerSameDay = slotsForDay.some((s) => isBeginnerSlot(s));
     const hasIntermediateSameDay = slotsForDay.some((s) => !isBeginnerSlot(s));
 
-    if (hasBeginnerSameDay) return true;
-    if (isBeginnerSlot(slot) && hasIntermediateSameDay) return true;
+    // Keep your original beginner/intermediate rule for regular packages.
+    if (selectedPackage.type === 'regular') {
+      if (hasBeginnerSameDay) return true;
+      if (isBeginnerSlot(slot) && hasIntermediateSameDay) return true;
+    }
+
+    // Competition Team daily limit:
+    // Daily 2H = max 2 slots/day
+    // 4D × 3H and 5D × 3H = max 3 slots/day
+    if (
+      selectedPackage.type === 'competition' &&
+      selectedPackage.maxHoursPerDay &&
+      slotsForDay.length >= selectedPackage.maxHoursPerDay
+    ) {
+      return true;
+    }
+
+    // Competition Team weekly day limit:
+    // Daily 2H = 5 days/week
+    // 4D × 3H = 4 days/week
+    // 5D × 3H = 5 days/week
+    if (
+      selectedPackage.type === 'competition' &&
+      selectedPackage.maxDaysPerWeek &&
+      !selectedDays.includes(day) &&
+      selectedDays.length >= selectedPackage.maxDaysPerWeek
+    ) {
+      return true;
+    }
+
     if (selectedHours >= weeklyHours) return true;
 
     return false;
@@ -189,7 +277,7 @@ export default function MonthlyPlan() {
     return selectedDays.includes(dayName);
   };
 
-  const canGoNext = selectedPackage && selectedHours === weeklyHours;
+  const canGoNext = !!selectedPackage && selectedHours === weeklyHours;
 
   const handleGoNext = () => {
     if (!canGoNext) return;
@@ -334,11 +422,11 @@ export default function MonthlyPlan() {
 
           <View style={styles.packageGrid}>
             {packages.map((p) => {
-              const active = selectedPackage === p;
+              const active = selectedPackage?.label === p.label;
 
               return (
                 <TouchableOpacity
-                  key={p}
+                  key={p.label}
                   style={[styles.packageCard, active && styles.packageCardActive]}
                   onPress={() => {
                     setSelectedPackage(p);
@@ -349,13 +437,13 @@ export default function MonthlyPlan() {
                   activeOpacity={0.85}
                 >
                   <Text style={[styles.packageHours, active && styles.packageHoursActive]}>
-                    {p}h
+                    {p.label}
                   </Text>
                   <Text style={[styles.packageLabel, active && styles.packageLabelActive]}>
                     4 weeks
                   </Text>
                   <Text style={[styles.packageWeekly, active && styles.packageWeeklyActive]}>
-                    {p / 4}h/week
+                    {p.weeklyHours || p.hours / 4}h/week
                   </Text>
                 </TouchableOpacity>
               );
@@ -364,30 +452,34 @@ export default function MonthlyPlan() {
 
           {selectedPackage && (
             <>
-              <Text style={styles.sectionTitleSmall}>Extra Month Hours</Text>
+              {selectedPackage.type === 'regular' && (
+                <>
+                  <Text style={styles.sectionTitleSmall}>Extra Month Hours</Text>
 
-              <View style={styles.extraInputBox}>
-                <Text style={styles.extraInputLabel}>Optional extra hours</Text>
-                <TextInput
-                  value={extraHoursInput}
-                  onChangeText={(value) => {
-                    const cleaned = value.replace(/[^0-9]/g, '');
-                    setExtraHoursInput(cleaned);
-                    setStartDate(null);
-                  }}
-                  placeholder="Example: 2, 4, 6"
-                  keyboardType="number-pad"
-                  style={styles.extraInput}
-                />
-                <Text style={styles.extraInputHint}>
-                  Add any extra hours for 5-week months or special cases. Example: 8h base + 2h extra = 10h total.
-                </Text>
-              </View>
+                  <View style={styles.extraInputBox}>
+                    <Text style={styles.extraInputLabel}>Optional extra hours</Text>
+                    <TextInput
+                      value={extraHoursInput}
+                      onChangeText={(value) => {
+                        const cleaned = value.replace(/[^0-9]/g, '');
+                        setExtraHoursInput(cleaned);
+                        setStartDate(null);
+                      }}
+                      placeholder="Example: 2, 4, 6"
+                      keyboardType="number-pad"
+                      style={styles.extraInput}
+                    />
+                    <Text style={styles.extraInputHint}>
+                      Add any extra hours for 5-week months or special cases. Example: 8h base + 2h extra = 10h total.
+                    </Text>
+                  </View>
+                </>
+              )}
 
               <View style={styles.totalBox}>
                 <Text style={styles.totalTitle}>Total package</Text>
                 <Text style={styles.totalText}>
-                  Base: {selectedPackage}h
+                  Base: {selectedPackage.hours}h
                   {extraHours > 0 ? ` + Extra: ${extraHours}h` : ''}
                   {' '}= {totalMonthlyHours}h total
                 </Text>
@@ -422,9 +514,9 @@ export default function MonthlyPlan() {
 
               {days.map((day) => {
                 const slots = getSlotsForDay(day);
-                const beginnerSelected = selectedSlots.some(
-                  (s) => s.day === day && isBeginnerSlot(s)
-                );
+                const beginnerSelected =
+                  selectedPackage.type === 'regular' &&
+                  selectedSlots.some((s) => s.day === day && isBeginnerSlot(s));
 
                 return (
                   <View key={day} style={styles.dayBlock}>
@@ -526,7 +618,7 @@ export default function MonthlyPlan() {
 
             {extraHours > 0 && (
               <Text style={styles.reviewText}>
-                Includes {selectedPackage}h base + {extraHours}h extra month hours
+                Includes {selectedPackage?.hours}h base + {extraHours}h extra month hours
               </Text>
             )}
 
@@ -667,7 +759,7 @@ const styles = StyleSheet.create({
   packageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   packageCard: { width: '23%', minWidth: 80, backgroundColor: '#fff', borderRadius: 18, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   packageCardActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  packageHours: { fontSize: 22, fontWeight: '900', color: Colors.text },
+  packageHours: { fontSize: 18, fontWeight: '900', color: Colors.text },
   packageHoursActive: { color: '#fff' },
   packageLabel: { color: Colors.textLight, fontSize: 12, marginTop: 2 },
   packageLabelActive: { color: '#EAF4FF' },
