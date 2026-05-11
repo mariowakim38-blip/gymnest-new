@@ -245,6 +245,26 @@ export default function AdminUserProgressScreen() {
     await reloadData();
   };
 
+  const cancelClassSession = async (bookingId: string) => {
+    const confirmCancel = typeof window !== 'undefined'
+      ? window.confirm('Cancel this class session?')
+      : true;
+
+    if (!confirmCancel) return;
+
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', bookingId);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    await reloadData();
+  };
+
   const updatePrivateSessionDate = async (sessionId: string, currentDate?: string) => {
     const newDate = askForDate('Enter new private session date (YYYY-MM-DD)', currentDate);
     if (!newDate) return;
@@ -377,6 +397,12 @@ export default function AdminUserProgressScreen() {
                   style={[styles.sessionActionButton, styles.absentActionButton]}
                   onPress={() => isPrivate ? setPrivateAttendance(item.id, false) : setClassAttendance(item.id, false)}
                 ><Text style={styles.sessionActionText}>Absent</Text></TouchableOpacity>
+                {!isPrivate && (
+                  <TouchableOpacity
+                    style={[styles.sessionActionButton, styles.cancelActionButton]}
+                    onPress={() => cancelClassSession(item.id)}
+                  ><Text style={styles.sessionActionText}>Cancel</Text></TouchableOpacity>
+                )}
                 {isPrivate && (
                   <TouchableOpacity
                     style={[styles.sessionActionButton, styles.deleteActionButton]}
@@ -432,6 +458,7 @@ const styles = StyleSheet.create({
   editActionButton: { backgroundColor: Colors.primary },
   presentActionButton: { backgroundColor: Colors.success },
   absentActionButton: { backgroundColor: Colors.warning },
+  cancelActionButton: { backgroundColor: Colors.danger },
   deleteActionButton: { backgroundColor: Colors.danger },
   sessionActionText: { color: Colors.white, fontWeight: '900', fontSize: 11 },
 });
