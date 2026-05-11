@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,141 @@ import {
   Alert,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { Trophy, Calendar, TrendingUp, Clock, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { Trophy, Calendar, CheckCircle2, AlertCircle, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
+
+type Bundle = {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  type: 'class' | 'private';
+  items: any[];
+  isFinished: boolean;
+};
 
 type ProgressData = {
   percentage: number;
   completedSessions: number;
   totalSessions: number;
   remainingSessions: number;
+  absentSessions: number;
   expiredSessions: number;
-  makeupSessions: number;
-  usableSessions: number;
+};
+
+const emptyProgress: ProgressData = {
+  percentage: 0,
+  completedSessions: 0,
+  totalSessions: 0,
+  remainingSessions: 0,
+  absentSessions: 0,
+  expiredSessions: 0,
+};
+
+const safeDate = (dateString?: string) => {
+  if (!dateString) return new Date();
+  return new Date(`${dateString}T12:00:00`);
+};
+
+const formatDisplayDate = (dateString?: string) => {
+  if (!dateString) return 'No date';
+  return safeDate(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const isPastSession = (dateString?: string) => {
+  if (!dateString) return false;
+  const sessionDate = safeDate(dateString);
+  const today = new Date();
+  sessionDate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return sessionDate.getTime() < today.getTime();
+};
+
+const getProgressBarWidth = (percentage: number) =>
+  `${Math.min(Math.max(percentage, 0), 100)}%` as `${number}%`;
+
+const getClassBundleKey = (booking: any) => {
+  if (booking.created_at) return String(booking.created_at).slice(0, 16);
+  return `${booking.profile_id || ''}-${booking.child_id || ''}-${String(booking.booking_date || '').slice(0, 7)}`;
+};
+
+const getClassBundles = (bookings: any[]): Bundle[] => {
+  const activeBookings = bookings.filter((b) => b.status !== 'cancelled');
+  const grouped = activeBookings.reduce((acc: Record<string, any[]>, booking) => {
+    const key = getClassBundleKey(booking);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(booking);
+    return acc;
+  }, {});
+
+  return Object.entries(grouped)
+    .map(([key, items]) => {
+      const sorted = [...items].sort(
+        (a, b) => safeDate(a.booking_date).getTime() - safeDate(b.booking_date).getTime()
+      );
+      const startDate = sorted[0]?.booking_date;
+      const endDate = sorted[sorted.length - 1]?.booking_date;
+      const isFinished = sorted.length > 0 && sorted.every((b) => b.attended === true || b.attended === false || b.status === 'cancelled');
+
+      return {
+        id: key,
+        label: `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`,
+        startDate,
+        endDate,
+        type: 'class' as const,
+        items: sorted,
+        isFinished,
+      };
+    })
+    .sort((a, b) => safeDate(b.startDate).getTime() - safeDate(a.startDate).getTime());
+};
+
+const getPrivateBundles = (privateBookings: any[]): Bundle[] => {
+  return privateBookings
+    .filter((booking) => booking.status !== 'cancelled')
+    .map((booking) => {
+      const sessions = [...(booking.private_booking_sessions || [])].sort(
+        (a, b) => safeDate(a.session_date).getTime() - safeDate(b.session_date).getTime()
+      );
+      const startDate = sessions[0]?.session_date || booking.start_date;
+      const endDate = sessions[sessions.length - 1]?.session_date || booking.start_date;
+      const isFinished = sessions.length > 0 && sessions.every((session: any) => session.attended === true || session.attended === false);
+
+      return {
+        id: String(booking.id),
+        label: `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`,
+        startDate,
+        endDate,
+        type: 'private' as const,
+        items: sessions.map((session: any) => ({ ...session, booking })),
+        isFinished,
+      };
+    })
+    .sort((a, b) => safeDate(b.startDate).getTime() - safeDate(a.startDate).getTime());
+};
+
+const getLatestUnfinishedBundle = (bundles: Bundle[]) => bundles.find((bundle) => !bundle.isFinished) || null;
+
+const calculateProgress = (bundle: Bundle | null): ProgressData => {
+  if (!bundle) return emptyProgress;
+
+  const dateKey = bundle.type === 'class' ? 'booking_date' : 'session_date';
+  const totalSessions = bundle.items.length;
+  const completedSessions = bundle.items.filter((item) => item.attended === true).length;
+  const absentSessions = bundle.items.filter((item) => item.attended === false).length;
+  const expiredSessions = bundle.items.filter(
+    (item) => item.attended !== true && item.attended !== false && isPastSession(item[dateKey])
+  ).length;
+  const remainingSessions = Math.max(totalSessions - completedSessions - absentSessions - expiredSessions, 0);
+  const percentage = totalSessions === 0 ? 0 : Math.min(Math.round((completedSessions / totalSessions) * 100), 100);
+
+  return { percentage, completedSessions, totalSessions, remainingSessions, absentSessions, expiredSessions };
 };
 
 export default function AdminUserProgressScreen() {
@@ -30,292 +152,81 @@ export default function AdminUserProgressScreen() {
   const [child, setChild] = useState<any>(null);
   const [parent, setParent] = useState<any>(null);
   const [bookings, setBookings] = useState<any[]>([]);
-  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
-  const [classesMap, setClassesMap] = useState<Record<string, any>>({});
+  const [privateBookings, setPrivateBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [progressType, setProgressType] = useState<'class' | 'private'>('class');
-  const [privateBookings, setPrivateBookings] = useState<any[]>([]);
+  const [selectedBundleId, setSelectedBundleId] = useState<string>('active');
+
+  const reloadData = async () => {
+    if (!childId) return;
+    setLoading(true);
+
+    const { data: childData, error: childError } = await supabase
+      .from('children')
+      .select('*')
+      .eq('id', childId)
+      .maybeSingle();
+
+    if (childError || !childData) {
+      console.error('Admin child progress error:', childError);
+      setLoading(false);
+      return;
+    }
+
+    setChild(childData);
+
+    const { data: parentData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', childData.profile_id)
+      .maybeSingle();
+
+    setParent(parentData);
+
+    const { data: bookingsData, error: bookingsError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('child_id', childId)
+      .order('booking_date', { ascending: true });
+
+    if (bookingsError) {
+      console.error('Admin progress bookings error:', bookingsError);
+      setBookings([]);
+    } else {
+      setBookings(bookingsData ?? []);
+    }
+
+    const { data: privateData, error: privateError } = await supabase
+      .from('private_bookings')
+      .select(`*, private_booking_sessions (*)`)
+      .eq('child_id', childId)
+      .order('start_date', { ascending: true });
+
+    if (privateError) {
+      console.error('Admin private progress error:', privateError);
+      setPrivateBookings([]);
+    } else {
+      setPrivateBookings(privateData ?? []);
+    }
+
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchProgressData = async () => {
-      if (!childId) return;
-
-      setLoading(true);
-
-      const { data: childData, error: childError } = await supabase
-        .from('children')
-        .select('*')
-        .eq('id', childId)
-        .maybeSingle();
-
-      if (childError || !childData) {
-        console.error('Admin child progress error:', childError);
-        setLoading(false);
-        return;
-      }
-
-      setChild(childData);
-
-      const { data: parentData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', childData.profile_id)
-        .maybeSingle();
-
-      setParent(parentData);
-
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('child_id', childId)
-        .order('booking_date', { ascending: true });
-
-      if (bookingsError) {
-        console.error('Admin progress bookings error:', bookingsError);
-        setBookings([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data: attendanceData, error: attendanceError } = await supabase
-        .from('attendance_records')
-        .select('*')
-        .eq('child_id', childId)
-        .order('attended_date', { ascending: true });
-
-      if (attendanceError) {
-        console.error('Admin progress attendance error:', attendanceError);
-        setAttendanceRecords([]);
-      } else {
-        setAttendanceRecords(attendanceData ?? []);
-      }
-
-      const { data: privateData, error: privateError } = await supabase
-        .from('private_bookings')
-        .select(`
-          *,
-          private_booking_sessions (*)
-        `)
-        .eq('child_id', childId);
-
-      if (privateError) {
-        console.error('Admin private progress error:', privateError);
-        setPrivateBookings([]);
-      } else {
-        setPrivateBookings(privateData ?? []);
-      }
-
-      const classIds = Array.from(
-        new Set((bookingsData ?? []).map((booking: any) => String(booking.class_id)))
-      );
-
-      const attendedClassIds = Array.from(
-        new Set(
-          (attendanceData ?? [])
-            .map((record: any) => String(record.attended_class_id))
-            .filter(Boolean)
-        )
-      );
-
-      const allClassIds = Array.from(new Set([...classIds, ...attendedClassIds]));
-      const classMap: Record<string, any> = {};
-
-      if (allClassIds.length > 0) {
-        const { data: classesData, error: classesError } = await supabase
-          .from('classes')
-          .select('id, name, age_group, day, time, duration, level');
-
-        if (classesError) {
-          console.error('Admin progress classes error:', classesError);
-        } else {
-          (classesData ?? []).forEach((cls: any) => {
-            classMap[String(cls.id)] = cls;
-          });
-        }
-      }
-
-      setBookings(bookingsData ?? []);
-      setClassesMap(classMap);
-      setLoading(false);
-    };
-
-    fetchProgressData();
+    reloadData();
   }, [childId]);
 
-  const safeDate = (dateString: string) => {
-    if (!dateString) return new Date();
-    return new Date(`${dateString}T12:00:00`);
-  };
-
-  const isPastSession = (dateString: string) => {
-    if (!dateString) return false;
-
-    const sessionDate = safeDate(dateString);
-    const today = new Date();
-
-    sessionDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-
-    return sessionDate.getTime() < today.getTime();
-  };
-
-  const presentAttendanceRecords = attendanceRecords.filter(
-    (record) => record.status === 'present'
-  );
-
-  const getEnrolledClasses = () => {
-    const map = new Map<string, any>();
-
-    bookings.forEach((booking) => {
-      const cls = classesMap[String(booking.class_id)];
-
-      if (cls) {
-        map.set(String(cls.id), {
-          id: cls.id,
-          name: cls.name,
-          ageGroup: cls.age_group,
-          day: cls.day,
-          time: cls.time,
-          duration: cls.duration,
-          level: cls.level,
-          source: 'booking',
-        });
-      }
-    });
-
-    presentAttendanceRecords.forEach((record) => {
-      const cls = classesMap[String(record.attended_class_id)];
-
-      if (cls && !map.has(String(cls.id))) {
-        map.set(String(cls.id), {
-          id: cls.id,
-          name: cls.name,
-          ageGroup: cls.age_group,
-          day: cls.day,
-          time: cls.time,
-          duration: cls.duration,
-          level: cls.level,
-          source: 'makeup',
-        });
-      }
-    });
-
-    return Array.from(map.values());
-  };
-
-  const getProgressData = (): ProgressData => {
-    const activeBookings = bookings.filter(
-      (booking) => booking.status !== 'cancelled'
-    );
-
-    const totalSessions = activeBookings.length;
-
-    const regularCompleted = activeBookings.filter(
-      (booking) => booking.attended === true
-    ).length;
-
-    const makeupSessions = presentAttendanceRecords.filter(
-      (record) =>
-        record.attendance_type === 'makeup' ||
-        record.attendance_type === 'manual'
-    ).length;
-
-    const completedSessions = regularCompleted + makeupSessions;
-
-    const expiredSessions = activeBookings.filter(
-      (booking) =>
-        booking.attended !== true &&
-        booking.status !== 'cancelled' &&
-        isPastSession(booking.booking_date)
-    ).length;
-
-    const remainingSessions = Math.max(
-      totalSessions - completedSessions - expiredSessions,
-      0
-    );
-
-    const usableSessions = Math.max(totalSessions - expiredSessions, 0);
-
-    const percentage =
-      totalSessions === 0
-        ? 0
-        : Math.min(Math.round((completedSessions / totalSessions) * 100), 100);
-
-    return {
-      percentage,
-      completedSessions,
-      totalSessions,
-      remainingSessions,
-      expiredSessions,
-      makeupSessions,
-      usableSessions,
-    };
-  };
-
-  const getPrivateProgressData = () => {
-    const allSessions = privateBookings.flatMap((booking: any) =>
-      (booking.private_booking_sessions || []).map((session: any) => ({
-        ...session,
-        booking,
-      }))
-    );
-
-    const totalSessions = allSessions.length;
-    const completedSessions = allSessions.filter((session: any) => session.attended === true).length;
-    const absentSessions = allSessions.filter((session: any) => session.attended === false).length;
-    const unmarkedSessions = allSessions.filter((session: any) => session.attended === null || session.attended === undefined).length;
-    const upcomingSessions = allSessions.filter((session: any) =>
-      (session.attended === null || session.attended === undefined) && !isPastSession(session.session_date)
-    ).length;
-    const remainingSessions = Math.max(totalSessions - completedSessions - absentSessions, 0);
-    const percentage =
-      totalSessions === 0
-        ? 0
-        : Math.min(Math.round((completedSessions / totalSessions) * 100), 100);
-
-    return {
-      percentage,
-      completedSessions,
-      totalSessions,
-      remainingSessions,
-      absentSessions,
-      unmarkedSessions,
-      upcomingSessions,
-      packagesCount: privateBookings.length,
-      sessions: allSessions.sort((a: any, b: any) =>
-        safeDate(a.session_date).getTime() - safeDate(b.session_date).getTime()
-      ),
-    };
-  };
-
-  const formatDisplayDate = (dateString: string) => {
-    if (!dateString) return 'No date';
-    return safeDate(dateString).toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const getPrivateSessionStatus = (session: any) => {
-    if (session.attended === true) return 'Present';
-    if (session.attended === false) return 'Absent';
-    return isPastSession(session.session_date) ? 'Not marked' : 'Upcoming';
-  };
-
-
-  const reloadProgressPage = () => {
-    if (typeof window !== 'undefined') {
-      window.location.reload();
-    }
-  };
+  const classBundles = useMemo(() => getClassBundles(bookings), [bookings]);
+  const privateBundles = useMemo(() => getPrivateBundles(privateBookings), [privateBookings]);
+  const bundles = progressType === 'class' ? classBundles : privateBundles;
+  const activeBundle = getLatestUnfinishedBundle(bundles);
+  const selectedBundle = selectedBundleId === 'active'
+    ? activeBundle
+    : bundles.find((bundle) => bundle.id === selectedBundleId) || activeBundle;
+  const progress = calculateProgress(selectedBundle);
 
   const askForDate = (title: string, currentDate?: string) => {
-    if (typeof window !== 'undefined') {
-      return window.prompt(title, currentDate || '')?.trim() || null;
-    }
-
+    if (typeof window !== 'undefined') return window.prompt(title, currentDate || '')?.trim() || null;
     Alert.alert('Date editing', 'Date editing is available on web for now.');
     return null;
   };
@@ -323,134 +234,37 @@ export default function AdminUserProgressScreen() {
   const updateClassBookingDate = async (bookingId: string, currentDate?: string) => {
     const newDate = askForDate('Enter new class session date (YYYY-MM-DD)', currentDate);
     if (!newDate) return;
-
-    const { error } = await supabase
-      .from('bookings')
-      .update({ booking_date: newDate })
-      .eq('id', bookingId);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
+    const { error } = await supabase.from('bookings').update({ booking_date: newDate }).eq('id', bookingId);
+    if (error) Alert.alert('Error', error.message);
+    await reloadData();
   };
 
   const setClassAttendance = async (bookingId: string, attended: boolean) => {
-    const { error } = await supabase
-      .from('bookings')
-      .update({
-        attended,
-        attendance_marked_at: new Date().toISOString(),
-      })
-      .eq('id', bookingId);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
-  };
-
-  const cancelClassSession = async (bookingId: string) => {
-    const confirmCancel = typeof window !== 'undefined'
-      ? window.confirm('Cancel this class session?')
-      : true;
-
-    if (!confirmCancel) return;
-
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status: 'cancelled' })
-      .eq('id', bookingId);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
+    const { error } = await supabase.from('bookings').update({ attended, attendance_marked_at: new Date().toISOString() }).eq('id', bookingId);
+    if (error) Alert.alert('Error', error.message);
+    await reloadData();
   };
 
   const updatePrivateSessionDate = async (sessionId: string, currentDate?: string) => {
     const newDate = askForDate('Enter new private session date (YYYY-MM-DD)', currentDate);
     if (!newDate) return;
-
-    const { error } = await supabase
-      .from('private_booking_sessions')
-      .update({ session_date: newDate })
-      .eq('id', sessionId);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
+    const { error } = await supabase.from('private_booking_sessions').update({ session_date: newDate }).eq('id', sessionId);
+    if (error) Alert.alert('Error', error.message);
+    await reloadData();
   };
 
   const setPrivateAttendance = async (sessionId: string, attended: boolean) => {
-    const { error } = await supabase
-      .from('private_booking_sessions')
-      .update({
-        attended,
-        attendance_marked_at: new Date().toISOString(),
-      })
-      .eq('id', sessionId);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
+    const { error } = await supabase.from('private_booking_sessions').update({ attended, attendance_marked_at: new Date().toISOString() }).eq('id', sessionId);
+    if (error) Alert.alert('Error', error.message);
+    await reloadData();
   };
 
   const deletePrivateSession = async (sessionId: string) => {
-    const confirmDelete = typeof window !== 'undefined'
-      ? window.confirm('Delete this private session? This cannot be undone.')
-      : true;
-
+    const confirmDelete = typeof window !== 'undefined' ? window.confirm('Delete this private session?') : true;
     if (!confirmDelete) return;
-
-    const { error } = await supabase
-      .from('private_booking_sessions')
-      .delete()
-      .eq('id', sessionId);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
-  };
-
-  const addPrivateSession = async (bookingId: string) => {
-    const newDate = askForDate('Enter new private session date (YYYY-MM-DD)');
-    if (!newDate) return;
-
-    const { error } = await supabase
-      .from('private_booking_sessions')
-      .insert({
-        private_booking_id: bookingId,
-        session_date: newDate,
-        attended: null,
-        note: 'Added manually by admin',
-      });
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
-    reloadProgressPage();
-  };
-
-  const getProgressBarWidth = (percentage: number) => {
-    return `${Math.min(Math.max(percentage, 0), 100)}%` as `${number}%`;
+    const { error } = await supabase.from('private_booking_sessions').delete().eq('id', sessionId);
+    if (error) Alert.alert('Error', error.message);
+    await reloadData();
   };
 
   if (loading) {
@@ -471,710 +285,153 @@ export default function AdminUserProgressScreen() {
     );
   }
 
-  const classProgress = getProgressData();
-  const privateProgress = getPrivateProgressData();
-  const enrolledClasses = getEnrolledClasses();
-  const activeProgress = progressType === 'class' ? classProgress : privateProgress;
-
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.studentSection}>
-        <LinearGradient
-          colors={[Colors.primary, '#2a3f5f']}
-          style={styles.studentHeader}
-        >
-          <View style={styles.studentHeaderContent}>
-            <View style={styles.studentAvatar}>
-              <Text style={styles.studentAvatarText}>
-                {String(child.name || '?').charAt(0)}
-              </Text>
-            </View>
-
-            <View style={styles.studentHeaderInfo}>
-              <Text style={styles.studentName}>{child.name}</Text>
-              <Text style={styles.studentAge}>{child.age} years old</Text>
-              <Text style={styles.studentAge}>Parent: {parent?.name || 'Unknown parent'}</Text>
-            </View>
-          </View>
-
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{progressType === 'class' ? enrolledClasses.length : privateProgress.packagesCount}</Text>
-              <Text style={styles.statLabel}>{progressType === 'class' ? 'Classes' : 'Private packages'}</Text>
-            </View>
-
-            <View style={styles.statDivider} />
-
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{activeProgress.percentage}%</Text>
-              <Text style={styles.statLabel}>Progress</Text>
-            </View>
-          </View>
-
-          <View style={styles.progressSummary}>
-            <View style={styles.progressBarTrack}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  { width: getProgressBarWidth(activeProgress.percentage) },
-                ]}
-              />
-            </View>
-
-            <Text style={styles.progressSummaryMain}>
-              {activeProgress.completedSessions} / {activeProgress.totalSessions} sessions completed
-            </Text>
-
-            <Text style={styles.progressSummarySub}>
-              {activeProgress.remainingSessions} remaining
-              {progressType === 'class' && classProgress.expiredSessions > 0 ? ` • ${classProgress.expiredSessions} expired` : ''}
-              {progressType === 'class' && classProgress.makeupSessions > 0 ? ` • ${classProgress.makeupSessions} make-up used` : ''}
-              {progressType === 'private' && privateProgress.absentSessions > 0 ? ` • ${privateProgress.absentSessions} absent` : ''}
-            </Text>
-          </View>
-        </LinearGradient>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <LinearGradient colors={[Colors.primary, '#2a3f5f']} style={styles.studentHeader}>
+        <Text style={styles.studentName}>{child.name}</Text>
+        <Text style={styles.studentAge}>{child.age} years old</Text>
+        <Text style={styles.studentAge}>Parent: {parent?.name || 'Unknown parent'}</Text>
 
         <View style={styles.progressToggle}>
           <TouchableOpacity
             style={[styles.progressToggleButton, progressType === 'class' && styles.progressToggleButtonActive]}
-            onPress={() => setProgressType('class')}
-            activeOpacity={0.85}
+            onPress={() => {
+              setProgressType('class');
+              setSelectedBundleId('active');
+            }}
           >
-            <Text style={[styles.progressToggleText, progressType === 'class' && styles.progressToggleTextActive]}>
-              Class Progress
-            </Text>
+            <Text style={[styles.progressToggleText, progressType === 'class' && styles.progressToggleTextActive]}>Class</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.progressToggleButton, progressType === 'private' && styles.progressToggleButtonActive]}
-            onPress={() => setProgressType('private')}
-            activeOpacity={0.85}
+            onPress={() => {
+              setProgressType('private');
+              setSelectedBundleId('active');
+            }}
           >
-            <Text style={[styles.progressToggleText, progressType === 'private' && styles.progressToggleTextActive]}>
-              Private Progress
-            </Text>
+            <Text style={[styles.progressToggleText, progressType === 'private' && styles.progressToggleTextActive]}>Private</Text>
           </TouchableOpacity>
         </View>
 
-        {progressType === 'class' && (
-        <View style={styles.sectionContent}>
-          <View style={styles.sectionHeader}>
-            <Calendar color={Colors.primary} size={20} />
-            <Text style={styles.sectionTitle}>Enrolled Classes</Text>
-          </View>
-
-          {enrolledClasses.length === 0 ? (
-            <Text style={styles.noDataText}>No classes enrolled yet</Text>
-          ) : (
-            enrolledClasses.map((cls: any) => (
-              <View key={cls.id} style={styles.classItem}>
-                <View style={styles.classItemLeft}>
-                  <Text style={styles.classItemName}>{cls.name}</Text>
-                  <Text style={styles.classItemTime}>
-                    {cls.day}, {cls.time} ({cls.duration})
-                  </Text>
-                  <Text style={styles.classItemLevel}>
-                    {cls.level} • {cls.ageGroup}
-                  </Text>
-                </View>
-
-                <View style={styles.progressBadge}>
-                  <TrendingUp color={Colors.success} size={16} />
-                </View>
-              </View>
-            ))
-          )}
+        <View style={styles.progressBarTrack}>
+          <View style={[styles.progressBarFill, { width: getProgressBarWidth(progress.percentage) }]} />
         </View>
-        )}
+        <Text style={styles.progressSummaryMain}>{progress.completedSessions} / {progress.totalSessions} sessions completed</Text>
+        <Text style={styles.progressSummarySub}>{progress.remainingSessions} remaining • {progress.percentage}%</Text>
+        <Text style={styles.progressSummarySub}>{selectedBundle ? selectedBundle.label : 'No active bundle. Progress reset to 0.'}</Text>
+      </LinearGradient>
 
-        {progressType === 'class' && (
-        <View style={styles.sectionContent}>
-          <View style={styles.sectionHeader}>
-            <Clock color={Colors.primary} size={20} />
-            <Text style={styles.sectionTitle}>Session Usage</Text>
-          </View>
-
-          <View style={styles.usageGrid}>
-            <View style={styles.usageCard}>
-              <CheckCircle2 color={Colors.success} size={20} />
-              <Text style={styles.usageNumber}>{classProgress.completedSessions}</Text>
-              <Text style={styles.usageLabel}>Completed</Text>
-            </View>
-
-            <View style={styles.usageCard}>
-              <Calendar color={Colors.primary} size={20} />
-              <Text style={styles.usageNumber}>{classProgress.remainingSessions}</Text>
-              <Text style={styles.usageLabel}>Remaining</Text>
-            </View>
-
-            <View style={styles.usageCard}>
-              <AlertCircle color={Colors.danger} size={20} />
-              <Text style={styles.usageNumber}>{classProgress.expiredSessions}</Text>
-              <Text style={styles.usageLabel}>Expired</Text>
-            </View>
-          </View>
-
-          {classProgress.makeupSessions > 0 && (
-            <View style={styles.makeupNotice}>
-              <Text style={styles.makeupNoticeTitle}>Make-up sessions included</Text>
-              <Text style={styles.makeupNoticeText}>
-                {classProgress.makeupSessions} make-up/manual attendance record
-                {classProgress.makeupSessions === 1 ? '' : 's'} deducted from total usage.
+      <View style={styles.bundleSelectorBox}>
+        <Text style={styles.sectionTitle}>Bundle History</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bundleSelectorScroll}>
+          <TouchableOpacity
+            style={[styles.bundleChip, selectedBundleId === 'active' && styles.bundleChipActive]}
+            onPress={() => setSelectedBundleId('active')}
+          >
+            <Text style={[styles.bundleChipText, selectedBundleId === 'active' && styles.bundleChipTextActive]}>Active</Text>
+          </TouchableOpacity>
+          {bundles.map((bundle) => (
+            <TouchableOpacity
+              key={bundle.id}
+              style={[styles.bundleChip, selectedBundleId === bundle.id && styles.bundleChipActive]}
+              onPress={() => setSelectedBundleId(bundle.id)}
+            >
+              <Text style={[styles.bundleChipText, selectedBundleId === bundle.id && styles.bundleChipTextActive]}>
+                {bundle.label}
               </Text>
-            </View>
-          )}
-        </View>
-        )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
-        {progressType === 'class' && (
-          <View style={styles.sectionContent}>
-            <View style={styles.sectionHeader}>
-              <Calendar color={Colors.primary} size={20} />
-              <Text style={styles.sectionTitle}>Class Sessions</Text>
-            </View>
+      <View style={styles.usageGrid}>
+        <View style={styles.usageCard}><CheckCircle2 color={Colors.success} size={20} /><Text style={styles.usageNumber}>{progress.completedSessions}</Text><Text style={styles.usageLabel}>Present</Text></View>
+        <View style={styles.usageCard}><Calendar color={Colors.primary} size={20} /><Text style={styles.usageNumber}>{progress.remainingSessions}</Text><Text style={styles.usageLabel}>Remaining</Text></View>
+        <View style={styles.usageCard}><AlertCircle color={Colors.danger} size={20} /><Text style={styles.usageNumber}>{progress.absentSessions}</Text><Text style={styles.usageLabel}>Absent</Text></View>
+      </View>
 
-            {bookings.filter((booking: any) => booking.status !== 'cancelled').length === 0 ? (
-              <Text style={styles.noDataText}>No class sessions booked yet</Text>
-            ) : (
-              bookings
-                .filter((booking: any) => booking.status !== 'cancelled')
-                .sort((a: any, b: any) => safeDate(a.booking_date).getTime() - safeDate(b.booking_date).getTime())
-                .map((booking: any) => {
-                  const cls = classesMap[String(booking.class_id)];
-
-                  return (
-                    <View key={booking.id} style={styles.sessionHistoryItem}>
-                      <View style={styles.classItemLeft}>
-                        <Text style={styles.classItemName}>{formatDisplayDate(booking.booking_date)}</Text>
-                        <Text style={styles.classItemTime}>
-                          {cls ? `${cls.name} • ${cls.day}, ${cls.time}` : 'Class session'}
-                        </Text>
-                        <Text style={styles.classItemLevel}>
-                          Status: {booking.attended === true ? 'Present' : booking.attended === false ? 'Absent' : 'Not marked'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.sessionActions}>
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.editActionButton]}
-                          onPress={() => updateClassBookingDate(booking.id, booking.booking_date)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Edit Date</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.presentActionButton]}
-                          onPress={() => setClassAttendance(booking.id, true)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Present</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.absentActionButton]}
-                          onPress={() => setClassAttendance(booking.id, false)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Absent</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.deleteActionButton]}
-                          onPress={() => cancelClassSession(booking.id)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Cancel</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })
-            )}
-          </View>
-        )}
-
-        {progressType === 'private' && (
-          <>
-            <View style={styles.sectionContent}>
-              <View style={styles.sectionHeader}>
-                <Clock color={Colors.primary} size={20} />
-                <Text style={styles.sectionTitle}>Private Session Usage</Text>
+      <View style={styles.sectionContent}>
+        <View style={styles.sectionHeader}><Clock color={Colors.primary} size={20} /><Text style={styles.sectionTitle}>Selected Bundle Sessions</Text></View>
+        {!selectedBundle ? (
+          <Text style={styles.noDataText}>No active sessions. Old bundles are in history.</Text>
+        ) : selectedBundle.items.map((item: any) => {
+          const isPrivate = selectedBundle.type === 'private';
+          const date = isPrivate ? item.session_date : item.booking_date;
+          const status = item.attended === true ? 'Present' : item.attended === false ? 'Absent' : isPastSession(date) ? 'Not marked' : 'Upcoming';
+          return (
+            <View key={item.id} style={styles.sessionHistoryItem}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.classItemName}>{formatDisplayDate(date)}</Text>
+                <Text style={styles.classItemTime}>{status}</Text>
               </View>
-
-              <View style={styles.usageGrid}>
-                <View style={styles.usageCard}>
-                  <CheckCircle2 color={Colors.success} size={20} />
-                  <Text style={styles.usageNumber}>{privateProgress.completedSessions}</Text>
-                  <Text style={styles.usageLabel}>Present</Text>
-                </View>
-
-                <View style={styles.usageCard}>
-                  <Calendar color={Colors.primary} size={20} />
-                  <Text style={styles.usageNumber}>{privateProgress.remainingSessions}</Text>
-                  <Text style={styles.usageLabel}>Remaining</Text>
-                </View>
-
-                <View style={styles.usageCard}>
-                  <AlertCircle color={Colors.danger} size={20} />
-                  <Text style={styles.usageNumber}>{privateProgress.absentSessions}</Text>
-                  <Text style={styles.usageLabel}>Absent</Text>
-                </View>
+              <View style={styles.sessionActions}>
+                <TouchableOpacity
+                  style={[styles.sessionActionButton, styles.editActionButton]}
+                  onPress={() => isPrivate ? updatePrivateSessionDate(item.id, date) : updateClassBookingDate(item.id, date)}
+                ><Text style={styles.sessionActionText}>Edit Date</Text></TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sessionActionButton, styles.presentActionButton]}
+                  onPress={() => isPrivate ? setPrivateAttendance(item.id, true) : setClassAttendance(item.id, true)}
+                ><Text style={styles.sessionActionText}>Present</Text></TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sessionActionButton, styles.absentActionButton]}
+                  onPress={() => isPrivate ? setPrivateAttendance(item.id, false) : setClassAttendance(item.id, false)}
+                ><Text style={styles.sessionActionText}>Absent</Text></TouchableOpacity>
+                {isPrivate && (
+                  <TouchableOpacity
+                    style={[styles.sessionActionButton, styles.deleteActionButton]}
+                    onPress={() => deletePrivateSession(item.id)}
+                  ><Text style={styles.sessionActionText}>Delete</Text></TouchableOpacity>
+                )}
               </View>
             </View>
-
-            <View style={styles.sectionContent}>
-              <View style={styles.sectionHeader}>
-                <Calendar color={Colors.primary} size={20} />
-                <Text style={styles.sectionTitle}>Private Packages</Text>
-              </View>
-
-              {privateBookings.length === 0 ? (
-                <Text style={styles.noDataText}>No private packages yet</Text>
-              ) : (
-                privateBookings.map((booking: any) => {
-                  const sessions = booking.private_booking_sessions || [];
-                  const completed = sessions.filter((session: any) => session.attended === true).length;
-                  const absent = sessions.filter((session: any) => session.attended === false).length;
-
-                  return (
-                    <View key={booking.id} style={styles.privatePackageCard}>
-                      <Text style={styles.classItemName}>Private Package</Text>
-                      <Text style={styles.classItemTime}>
-                        {booking.package_hours || sessions.length} total hours • {booking.session_duration_hours || 1}h/session
-                      </Text>
-                      <Text style={styles.classItemLevel}>
-                        {completed} present • {absent} absent • {Math.max(sessions.length - completed - absent, 0)} remaining
-                      </Text>
-                      {!!booking.description && (
-                        <Text style={styles.privateDescription}>{booking.description}</Text>
-                      )}
-
-                      <TouchableOpacity
-                        style={styles.addSessionButton}
-                        onPress={() => addPrivateSession(booking.id)}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={styles.addSessionButtonText}>+ Add Session</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-
-            <View style={styles.sectionContent}>
-              <View style={styles.sectionHeader}>
-                <Calendar color={Colors.primary} size={20} />
-                <Text style={styles.sectionTitle}>Private Session History</Text>
-              </View>
-
-              {privateProgress.sessions.length === 0 ? (
-                <Text style={styles.noDataText}>No private sessions scheduled yet</Text>
-              ) : (
-                privateProgress.sessions.map((session: any) => {
-                  const status = getPrivateSessionStatus(session);
-
-                  return (
-                    <View key={session.id} style={styles.sessionHistoryItem}>
-                      <View style={styles.classItemLeft}>
-                        <Text style={styles.classItemName}>{formatDisplayDate(session.session_date)}</Text>
-                        {!!session.booking?.description && (
-                          <Text style={styles.classItemTime}>{session.booking.description}</Text>
-                        )}
-                        {!!session.note && (
-                          <Text style={styles.privateDescription}>Note: {session.note}</Text>
-                        )}
-
-                        <View
-                          style={[
-                            styles.statusBadge,
-                            status === 'Present' && styles.statusPresent,
-                            status === 'Absent' && styles.statusAbsent,
-                            status === 'Upcoming' && styles.statusUpcoming,
-                          ]}
-                        >
-                          <Text style={styles.statusBadgeText}>{status}</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.sessionActions}>
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.editActionButton]}
-                          onPress={() => updatePrivateSessionDate(session.id, session.session_date)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Edit Date</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.presentActionButton]}
-                          onPress={() => setPrivateAttendance(session.id, true)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Present</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.absentActionButton]}
-                          onPress={() => setPrivateAttendance(session.id, false)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Absent</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.sessionActionButton, styles.deleteActionButton]}
-                          onPress={() => deletePrivateSession(session.id)}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.sessionActionText}>Delete</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </>
-        )}
+          );
+        })}
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    padding: 16,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    backgroundColor: Colors.background,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-    marginTop: 16,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: Colors.textLight,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  studentSection: {
-    marginBottom: 24,
-  },
-  studentHeader: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    overflow: 'hidden' as const,
-  },
-  studentHeaderContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  studentAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.gold,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  studentAvatarText: {
-    fontSize: 24,
-    fontWeight: 'bold' as const,
-    color: Colors.white,
-  },
-  studentHeaderInfo: {
-    flex: 1,
-  },
-  studentName: {
-    fontSize: 22,
-    fontWeight: 'bold' as const,
-    color: Colors.white,
-    marginBottom: 4,
-  },
-  studentAge: {
-    fontSize: 14,
-    color: Colors.gold,
-    marginTop: 2,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold' as const,
-    color: Colors.white,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: Colors.gold,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  progressSummary: {
-    marginTop: 18,
-  },
-  progressBarTrack: {
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    overflow: 'hidden' as const,
-    marginBottom: 10,
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: Colors.gold,
-  },
-  progressSummaryMain: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '700' as const,
-    textAlign: 'center',
-  },
-  progressSummarySub: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 12,
-    fontWeight: '600' as const,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  sectionContent: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-  },
-
-  progressToggle: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-  progressToggleButton: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  progressToggleButtonActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  progressToggleText: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.primary,
-  },
-  progressToggleTextActive: {
-    color: Colors.white,
-  },
-  noDataText: {
-    fontSize: 14,
-    color: Colors.textLight,
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  classItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  classItemLeft: {
-    flex: 1,
-  },
-  classItemName: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  classItemTime: {
-    fontSize: 13,
-    color: Colors.textLight,
-  },
-  classItemLevel: {
-    fontSize: 12,
-    color: Colors.primary,
-    fontWeight: '600' as const,
-    marginTop: 3,
-  },
-  progressBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e8f5e9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  usageGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  usageCard: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    borderRadius: 14,
-    padding: 12,
-    alignItems: 'center',
-  },
-  usageNumber: {
-    fontSize: 20,
-    fontWeight: 'bold' as const,
-    color: Colors.text,
-    marginTop: 6,
-  },
-  usageLabel: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: Colors.textLight,
-    marginTop: 2,
-  },
-  makeupNotice: {
-    marginTop: 14,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 12,
-    padding: 12,
-  },
-  makeupNoticeTitle: {
-    fontSize: 14,
-    fontWeight: 'bold' as const,
-    color: Colors.success,
-    marginBottom: 4,
-  },
-  makeupNoticeText: {
-    fontSize: 12,
-    color: Colors.text,
-    lineHeight: 18,
-  },
-
-  privatePackageCard: {
-    backgroundColor: Colors.background,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-  },
-  privateDescription: {
-    fontSize: 12,
-    color: Colors.textLight,
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  sessionHistoryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  statusBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: Colors.border,
-    marginLeft: 10,
-  },
-  statusPresent: {
-    backgroundColor: '#E8F5E9',
-  },
-  statusAbsent: {
-    backgroundColor: '#FFEBEE',
-  },
-  statusUpcoming: {
-    backgroundColor: '#E3F2FD',
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-    color: Colors.text,
-  },
-  sessionActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginLeft: 12,
-    maxWidth: 420,
-  },
-  sessionActionButton: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  editActionButton: {
-    backgroundColor: '#E3F2FD',
-  },
-  presentActionButton: {
-    backgroundColor: '#E8F5E9',
-  },
-  absentActionButton: {
-    backgroundColor: '#FFF3E0',
-  },
-  deleteActionButton: {
-    backgroundColor: '#FFEBEE',
-  },
-  sessionActionText: {
-    fontSize: 11,
-    fontWeight: '900' as const,
-    color: Colors.text,
-  },
-  addSessionButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  addSessionButtonText: {
-    color: Colors.white,
-    fontSize: 13,
-    fontWeight: '900' as const,
-  },
-
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 16, paddingBottom: 40 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyStateTitle: { fontSize: 22, fontWeight: '900', color: Colors.text, marginTop: 12 },
+  emptyStateText: { fontSize: 15, color: Colors.textLight, textAlign: 'center', marginTop: 8 },
+  studentHeader: { borderRadius: 24, padding: 22, marginBottom: 16 },
+  studentName: { color: Colors.white, fontSize: 26, fontWeight: '900' },
+  studentAge: { color: '#EAF4FF', fontSize: 14, marginTop: 4, fontWeight: '700' },
+  progressToggle: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 999, padding: 4, marginTop: 18, gap: 4 },
+  progressToggleButton: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: 'center' },
+  progressToggleButtonActive: { backgroundColor: Colors.white },
+  progressToggleText: { color: Colors.white, fontWeight: '900' },
+  progressToggleTextActive: { color: Colors.primary },
+  progressBarTrack: { height: 12, backgroundColor: 'rgba(255,255,255,0.28)', borderRadius: 999, overflow: 'hidden', marginTop: 18 },
+  progressBarFill: { height: '100%', backgroundColor: Colors.white, borderRadius: 999 },
+  progressSummaryMain: { color: Colors.white, fontSize: 16, fontWeight: '900', marginTop: 12 },
+  progressSummarySub: { color: '#EAF4FF', fontSize: 13, fontWeight: '700', marginTop: 4 },
+  bundleSelectorBox: { backgroundColor: Colors.white, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14 },
+  bundleSelectorScroll: { gap: 8, paddingTop: 8 },
+  bundleChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, backgroundColor: '#E8ECF2' },
+  bundleChipActive: { backgroundColor: Colors.primary },
+  bundleChipText: { color: Colors.textLight, fontWeight: '900', fontSize: 12 },
+  bundleChipTextActive: { color: Colors.white },
+  usageGrid: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  usageCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 18, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  usageNumber: { fontSize: 22, fontWeight: '900', color: Colors.text, marginTop: 6 },
+  usageLabel: { fontSize: 12, color: Colors.textLight, fontWeight: '800', marginTop: 2 },
+  sectionContent: { backgroundColor: Colors.white, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#E2E8F0' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: '900', color: Colors.text },
+  noDataText: { color: Colors.textLight, fontWeight: '700' },
+  sessionHistoryItem: { flexDirection: 'row', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  classItemName: { color: Colors.text, fontSize: 15, fontWeight: '900' },
+  classItemTime: { color: Colors.textLight, fontSize: 13, fontWeight: '700', marginTop: 4 },
+  sessionActions: { gap: 6, alignItems: 'flex-end' },
+  sessionActionButton: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
+  editActionButton: { backgroundColor: Colors.primary },
+  presentActionButton: { backgroundColor: Colors.success },
+  absentActionButton: { backgroundColor: Colors.warning },
+  deleteActionButton: { backgroundColor: Colors.danger },
+  sessionActionText: { color: Colors.white, fontWeight: '900', fontSize: 11 },
 });
