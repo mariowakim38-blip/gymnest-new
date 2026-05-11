@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 const packages = [4, 8, 12, 16, 20, 24, 28, 32];
+const extraWeekOptions = [0, 1];
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const dayMap: Record<string, number> = {
@@ -49,6 +50,7 @@ export default function MonthlyPlan() {
 
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+  const [extraWeeks, setExtraWeeks] = useState<number>(0);
   const [selectedSlots, setSelectedSlots] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [startDate, setStartDate] = useState<Date | null>(null);
@@ -77,6 +79,9 @@ export default function MonthlyPlan() {
   }, []);
 
   const weeklyHours = selectedPackage ? selectedPackage / 4 : 0;
+  const totalWeeks = 4 + extraWeeks;
+  const extraHours = weeklyHours * extraWeeks;
+  const totalMonthlyHours = selectedPackage ? selectedPackage + extraHours : 0;
   const selectedHours = selectedSlots.length;
   const remainingHours = weeklyHours - selectedHours;
 
@@ -142,7 +147,7 @@ export default function MonthlyPlan() {
     setSelectedSlots((current) => [...current, { ...slot, day }]);
   };
 
-  const generateDates = (day: string, weeks = 4) => {
+  const generateDates = (day: string, weeks = totalWeeks) => {
     if (!startDate) return [];
 
     const start = new Date(startDate);
@@ -232,7 +237,7 @@ export default function MonthlyPlan() {
         return;
       }
 
-      const dates = generateDates(slot.day);
+      const dates = generateDates(slot.day, totalWeeks);
 
       for (const date of dates) {
         allBookings.push({
@@ -281,7 +286,7 @@ export default function MonthlyPlan() {
         <Text style={styles.heroSmall}>Monthly Training Plan</Text>
         <Text style={styles.heroTitle}>Build your child’s schedule</Text>
         <Text style={styles.heroSubtitle}>
-          Choose a package, select weekly classes, then choose the first attendance date.
+          Choose a package, add optional extra month hours, select weekly classes, then choose the first attendance date.
         </Text>
       </View>
 
@@ -313,6 +318,7 @@ export default function MonthlyPlan() {
                   style={[styles.packageCard, active && styles.packageCardActive]}
                   onPress={() => {
                     setSelectedPackage(p);
+                    setExtraWeeks(0);
                     setSelectedSlots([]);
                     setStartDate(null);
                   }}
@@ -322,7 +328,7 @@ export default function MonthlyPlan() {
                     {p}h
                   </Text>
                   <Text style={[styles.packageLabel, active && styles.packageLabelActive]}>
-                    per month
+                    4 weeks
                   </Text>
                   <Text style={[styles.packageWeekly, active && styles.packageWeeklyActive]}>
                     {p / 4}h/week
@@ -334,6 +340,46 @@ export default function MonthlyPlan() {
 
           {selectedPackage && (
             <>
+              <Text style={styles.sectionTitleSmall}>Extra Month Hours</Text>
+
+              <View style={styles.extraGrid}>
+                {extraWeekOptions.map((weeks) => {
+                  const active = extraWeeks === weeks;
+                  const calculatedExtraHours = weeklyHours * weeks;
+
+                  return (
+                    <TouchableOpacity
+                      key={weeks}
+                      style={[styles.extraCard, active && styles.extraCardActive]}
+                      onPress={() => {
+                        setExtraWeeks(weeks);
+                        setStartDate(null);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.extraTitle, active && styles.extraTitleActive]}>
+                        {weeks === 0 ? 'No extra' : `+${calculatedExtraHours}h`}
+                      </Text>
+                      <Text style={[styles.extraSubtitle, active && styles.extraSubtitleActive]}>
+                        {weeks === 0 ? '4-week package' : `Add ${weeks} extra week`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.totalBox}>
+                <Text style={styles.totalTitle}>Total package</Text>
+                <Text style={styles.totalText}>
+                  Base: {selectedPackage}h
+                  {extraHours > 0 ? ` + Extra: ${extraHours}h` : ''}
+                  {' '}= {totalMonthlyHours}h total
+                </Text>
+                <Text style={styles.totalSubText}>
+                  Generated bookings: {totalWeeks} week{totalWeeks > 1 ? 's' : ''} × {weeklyHours}h/week
+                </Text>
+              </View>
+
               <View style={styles.progressBox}>
                 <Text style={styles.progressTitle}>Select {weeklyHours} hours per week</Text>
                 <Text style={styles.progressText}>
@@ -459,8 +505,14 @@ export default function MonthlyPlan() {
             </View>
 
             <Text style={styles.reviewText}>
-              Package: {selectedPackage}h/month • {weeklyHours}h/week
+              Package: {totalMonthlyHours}h total • {weeklyHours}h/week • {totalWeeks} weeks
             </Text>
+
+            {extraHours > 0 && (
+              <Text style={styles.reviewText}>
+                Includes {selectedPackage}h base + {extraHours}h extra month hours
+              </Text>
+            )}
 
             <Text style={styles.allowedDaysText}>
               Calendar enabled days: {selectedDays.join(', ')}
@@ -475,7 +527,7 @@ export default function MonthlyPlan() {
 
           <Text style={styles.sectionTitle}>Choose Start Date</Text>
           <Text style={styles.calendarHint}>
-            Only the days selected in your weekly schedule are available.
+            Only the days selected in your weekly schedule are available, including past dates.
           </Text>
 
           <View style={styles.calendarCard}>
@@ -595,6 +647,7 @@ const styles = StyleSheet.create({
   stepText: { color: Colors.textLight, fontWeight: '800' },
   stepTextActive: { color: '#fff' },
   sectionTitle: { fontSize: 20, fontWeight: '900', color: Colors.text, marginBottom: 12 },
+  sectionTitleSmall: { fontSize: 16, fontWeight: '900', color: Colors.text, marginTop: 18, marginBottom: 10 },
   packageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   packageCard: { width: '23%', minWidth: 80, backgroundColor: '#fff', borderRadius: 18, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   packageCardActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
@@ -604,7 +657,18 @@ const styles = StyleSheet.create({
   packageLabelActive: { color: '#EAF4FF' },
   packageWeekly: { color: Colors.primary, fontSize: 12, fontWeight: '800', marginTop: 8 },
   packageWeeklyActive: { color: '#fff' },
-  progressBox: { backgroundColor: '#fff', borderRadius: 18, padding: 16, marginTop: 18, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0' },
+  extraGrid: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  extraCard: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  extraCardActive: { backgroundColor: '#EAF4FF', borderColor: Colors.primary },
+  extraTitle: { fontSize: 18, fontWeight: '900', color: Colors.text },
+  extraTitleActive: { color: Colors.primary },
+  extraSubtitle: { fontSize: 12, fontWeight: '700', color: Colors.textLight, marginTop: 4 },
+  extraSubtitleActive: { color: Colors.primary },
+  totalBox: { backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14 },
+  totalTitle: { color: Colors.text, fontSize: 15, fontWeight: '900', marginBottom: 4 },
+  totalText: { color: Colors.primary, fontSize: 14, fontWeight: '900' },
+  totalSubText: { color: Colors.textLight, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  progressBox: { backgroundColor: '#fff', borderRadius: 18, padding: 16, marginTop: 4, marginBottom: 16, borderWidth: 1, borderColor: '#E2E8F0' },
   progressTitle: { fontSize: 16, fontWeight: '900', color: Colors.text },
   progressText: { marginTop: 4, color: Colors.textLight, fontWeight: '700' },
   progressBar: { height: 10, backgroundColor: '#E8ECF2', borderRadius: 999, marginTop: 12, overflow: 'hidden' },
