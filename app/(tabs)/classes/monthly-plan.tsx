@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -21,7 +22,6 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 const packages = [4, 8, 12, 16, 20, 24, 28, 32];
-const extraWeekOptions = [0, 1];
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const dayMap: Record<string, number> = {
@@ -50,7 +50,7 @@ export default function MonthlyPlan() {
 
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
-  const [extraWeeks, setExtraWeeks] = useState<number>(0);
+  const [extraHoursInput, setExtraHoursInput] = useState<string>('');
   const [selectedSlots, setSelectedSlots] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [startDate, setStartDate] = useState<Date | null>(null);
@@ -79,9 +79,10 @@ export default function MonthlyPlan() {
   }, []);
 
   const weeklyHours = selectedPackage ? selectedPackage / 4 : 0;
-  const totalWeeks = 4 + extraWeeks;
-  const extraHours = weeklyHours * extraWeeks;
+  const cleanExtraHours = Math.max(0, Math.floor(Number(extraHoursInput) || 0));
+  const extraHours = selectedPackage ? cleanExtraHours : 0;
   const totalMonthlyHours = selectedPackage ? selectedPackage + extraHours : 0;
+  const totalWeeks = selectedPackage && weeklyHours > 0 ? 4 + Math.ceil(extraHours / weeklyHours) : 4;
   const selectedHours = selectedSlots.length;
   const remainingHours = weeklyHours - selectedHours;
 
@@ -237,14 +238,37 @@ export default function MonthlyPlan() {
         return;
       }
 
-      const dates = generateDates(slot.day, totalWeeks);
+      const baseDates = generateDates(slot.day, 4);
 
-      for (const date of dates) {
+      for (const date of baseDates) {
         allBookings.push({
           profile_id: user.id,
           child_id: student.id,
           class_id: classMatch.id,
           booking_date: date,
+          status: 'confirmed',
+        });
+      }
+    }
+
+    for (let i = 0; i < extraHours; i += 1) {
+      const slot = selectedSlots[i % selectedSlots.length];
+      const extraWeekIndex = Math.floor(i / selectedSlots.length);
+      const classMatch = findMatchingClass(slot);
+
+      if (!classMatch) {
+        Alert.alert('Missing Class', `${slot.day} ${slot.time} was not found in your classes table.`);
+        return;
+      }
+
+      const extraDate = generateDates(slot.day, 5 + extraWeekIndex)[4 + extraWeekIndex];
+
+      if (extraDate) {
+        allBookings.push({
+          profile_id: user.id,
+          child_id: student.id,
+          class_id: classMatch.id,
+          booking_date: extraDate,
           status: 'confirmed',
         });
       }
@@ -318,7 +342,7 @@ export default function MonthlyPlan() {
                   style={[styles.packageCard, active && styles.packageCardActive]}
                   onPress={() => {
                     setSelectedPackage(p);
-                    setExtraWeeks(0);
+                    setExtraHoursInput('');
                     setSelectedSlots([]);
                     setStartDate(null);
                   }}
@@ -342,30 +366,22 @@ export default function MonthlyPlan() {
             <>
               <Text style={styles.sectionTitleSmall}>Extra Month Hours</Text>
 
-              <View style={styles.extraGrid}>
-                {extraWeekOptions.map((weeks) => {
-                  const active = extraWeeks === weeks;
-                  const calculatedExtraHours = weeklyHours * weeks;
-
-                  return (
-                    <TouchableOpacity
-                      key={weeks}
-                      style={[styles.extraCard, active && styles.extraCardActive]}
-                      onPress={() => {
-                        setExtraWeeks(weeks);
-                        setStartDate(null);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[styles.extraTitle, active && styles.extraTitleActive]}>
-                        {weeks === 0 ? 'No extra' : `+${calculatedExtraHours}h`}
-                      </Text>
-                      <Text style={[styles.extraSubtitle, active && styles.extraSubtitleActive]}>
-                        {weeks === 0 ? '4-week package' : `Add ${weeks} extra week`}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={styles.extraInputBox}>
+                <Text style={styles.extraInputLabel}>Optional extra hours</Text>
+                <TextInput
+                  value={extraHoursInput}
+                  onChangeText={(value) => {
+                    const cleaned = value.replace(/[^0-9]/g, '');
+                    setExtraHoursInput(cleaned);
+                    setStartDate(null);
+                  }}
+                  placeholder="Example: 2, 4, 6"
+                  keyboardType="number-pad"
+                  style={styles.extraInput}
+                />
+                <Text style={styles.extraInputHint}>
+                  Add any extra hours for 5-week months or special cases. Example: 8h base + 2h extra = 10h total.
+                </Text>
               </View>
 
               <View style={styles.totalBox}>
@@ -376,7 +392,7 @@ export default function MonthlyPlan() {
                   {' '}= {totalMonthlyHours}h total
                 </Text>
                 <Text style={styles.totalSubText}>
-                  Generated bookings: {totalWeeks} week{totalWeeks > 1 ? 's' : ''} × {weeklyHours}h/week
+                  Generated bookings: 4 base weeks + {extraHours} extra hour{extraHours === 1 ? '' : 's'}
                 </Text>
               </View>
 
@@ -505,7 +521,7 @@ export default function MonthlyPlan() {
             </View>
 
             <Text style={styles.reviewText}>
-              Package: {totalMonthlyHours}h total • {weeklyHours}h/week • {totalWeeks} weeks
+              Package: {totalMonthlyHours}h total • {weeklyHours}h/week • {extraHours} extra hour{extraHours === 1 ? '' : 's'}
             </Text>
 
             {extraHours > 0 && (
@@ -657,13 +673,10 @@ const styles = StyleSheet.create({
   packageLabelActive: { color: '#EAF4FF' },
   packageWeekly: { color: Colors.primary, fontSize: 12, fontWeight: '800', marginTop: 8 },
   packageWeeklyActive: { color: '#fff' },
-  extraGrid: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  extraCard: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
-  extraCardActive: { backgroundColor: '#EAF4FF', borderColor: Colors.primary },
-  extraTitle: { fontSize: 18, fontWeight: '900', color: Colors.text },
-  extraTitleActive: { color: Colors.primary },
-  extraSubtitle: { fontSize: 12, fontWeight: '700', color: Colors.textLight, marginTop: 4 },
-  extraSubtitleActive: { color: Colors.primary },
+  extraInputBox: { backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 12 },
+  extraInputLabel: { fontSize: 14, fontWeight: '900', color: Colors.text, marginBottom: 8 },
+  extraInput: { backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', paddingHorizontal: 12, paddingVertical: 12, fontSize: 16, fontWeight: '800', color: Colors.text },
+  extraInputHint: { color: Colors.textLight, fontSize: 12, fontWeight: '700', marginTop: 8, lineHeight: 17 },
   totalBox: { backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14 },
   totalTitle: { color: Colors.text, fontSize: 15, fontWeight: '900', marginBottom: 4 },
   totalText: { color: Colors.primary, fontSize: 14, fontWeight: '900' },
