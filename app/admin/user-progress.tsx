@@ -23,6 +23,7 @@ type Bundle = {
   type: 'class' | 'private';
   items: any[];
   isFinished: boolean;
+  subscription?: any;
 };
 
 type ProgressData = {
@@ -89,8 +90,66 @@ const getClassBundleKey = (booking: any) => {
   return `${booking.profile_id || ''}-${booking.child_id || ''}-${String(booking.booking_date || '').slice(0, 7)}`;
 };
 
-const getClassBundles = (bookings: any[]): Bundle[] => {
+const getClassBundles = (bookings: any[], monthlySubscriptions: any[]): Bundle[] => {
   const activeBookings = bookings.filter((b) => b.status !== 'cancelled');
+
+  const subscriptionBundles = (monthlySubscriptions || [])
+    .map((subscription: any) => {
+      const startDate = subscription.start_date;
+      const endDate = subscription.end_date;
+
+      const items = activeBookings
+        .filter((booking) => {
+          const bookingDate = String(booking.booking_date || '');
+          return bookingDate >= String(startDate || '') && bookingDate <= String(endDate || '');
+        })
+        .sort((a, b) => safeDate(a.booking_date).getTime() - safeDate(b.booking_date).getTime());
+
+      const expectedTotal = Number(subscription.package_hours) || items.length;
+
+      const paddedItems =
+        items.length >= expectedTotal
+          ? items
+          : [
+              ...items,
+              ...Array.from({ length: expectedTotal - items.length }, (_, index) => ({
+                id: `missing-${subscription.id}-${index}`,
+                booking_date: startDate,
+                attended: null,
+                status: 'missing',
+                isMissingBooking: true,
+              })),
+            ];
+
+      const isFinished =
+        paddedItems.length > 0 &&
+        paddedItems.every(
+          (b) => b.attended === true || b.attended === false || b.status === 'cancelled'
+        );
+
+      const categoryLabel =
+        subscription.bundle_category === 'competition' ? 'Competition Team • ' : '';
+
+      return {
+        id: String(subscription.id),
+        label: `${categoryLabel}${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`,
+        startDate,
+        endDate,
+        type: 'class' as const,
+        items: paddedItems,
+        isFinished,
+        subscription,
+      };
+    });
+
+  if (subscriptionBundles.length > 0) {
+    return subscriptionBundles.sort((a, b) => {
+      const aCreated = safeDate(a.subscription?.created_at || a.startDate).getTime();
+      const bCreated = safeDate(b.subscription?.created_at || b.startDate).getTime();
+      return bCreated - aCreated;
+    });
+  }
+
   const grouped = activeBookings.reduce((acc: Record<string, any[]>, booking) => {
     const key = getClassBundleKey(booking);
     if (!acc[key]) acc[key] = [];
@@ -148,8 +207,15 @@ const getPrivateBundles = (privateBookings: any[]): Bundle[] => {
     .sort((a, b) => safeDate(b.startDate).getTime() - safeDate(a.startDate).getTime());
 };
 
-const getLatestUnfinishedBundle = (bundles: Bundle[]) =>
-  bundles.find((bundle) => !bundle.isFinished) || null;
+const getLatestUnfinishedBundle = (bundles: Bundle[]) => {
+  const activeSubscriptionBundle = bundles.find(
+    (bundle) => bundle.subscription?.status === 'active' && !bundle.isFinished
+  );
+
+  if (activeSubscriptionBundle) return activeSubscriptionBundle;
+
+  return bundles.find((bundle) => !bundle.isFinished) || null;
+};
 
 const calculateProgress = (bundle: Bundle | null): ProgressData => {
   if (!bundle) return emptyProgress;
@@ -176,6 +242,7 @@ export default function AdminUserProgressScreen() {
   const [child, setChild] = useState<any>(null);
   const [parent, setParent] = useState<any>(null);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [monthlySubscriptions, setMonthlySubscriptions] = useState<any[]>([]);
   const [privateBookings, setPrivateBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [progressType, setProgressType] = useState<'class' | 'private'>('class');
@@ -223,6 +290,19 @@ export default function AdminUserProgressScreen() {
       setBookings(bookingsData ?? []);
     }
 
+    const { data: subscriptionData, error: subscriptionError } = await supabase
+      .from('monthly_subscriptions')
+      .select('*')
+      .eq('child_id', childId)
+      .order('created_at', { ascending: false });
+
+    if (subscriptionError) {
+      console.error('Admin monthly subscriptions error:', subscriptionError);
+      setMonthlySubscriptions([]);
+    } else {
+      setMonthlySubscriptions(subscriptionData ?? []);
+    }
+
     const { data: privateData, error: privateError } = await supabase
       .from('private_bookings')
       .select(`*, private_booking_sessions (*)`)
@@ -243,7 +323,7 @@ export default function AdminUserProgressScreen() {
     reloadData();
   }, [childId]);
 
-  const classBundles = useMemo(() => getClassBundles(bookings), [bookings]);
+  const classBundles = useMemo(() => getClassBundles(bookings, monthlySubscriptions), [bookings, monthlySubscriptions]);
   const privateBundles = useMemo(() => getPrivateBundles(privateBookings), [privateBookings]);
   const bundles = progressType === 'class' ? classBundles : privateBundles;
   const activeBundle = getLatestUnfinishedBundle(bundles);
@@ -455,39 +535,49 @@ export default function AdminUserProgressScreen() {
           ) : selectedBundle.items.map((item: any) => {
             const isPrivate = selectedBundle.type === 'private';
             const date = isPrivate ? item.session_date : item.booking_date;
-            const status = item.attended === true ? 'Present' : item.attended === false ? 'Absent' : isPastSession(date) ? 'Not marked' : 'Upcoming';
+            const status = item.isMissingBooking
+              ? 'Missing booking row'
+              : item.attended === true
+                ? 'Present'
+                : item.attended === false
+                  ? 'Absent'
+                  : isPastSession(date)
+                    ? 'Not marked'
+                    : 'Upcoming';
             return (
               <View key={item.id} style={styles.sessionHistoryItem}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.classItemName}>{formatDisplayDate(date)}</Text>
                   <Text style={styles.classItemTime}>{status}</Text>
                 </View>
-                <View style={styles.sessionActions}>
-                  <TouchableOpacity
-                    style={[styles.sessionActionButton, styles.editActionButton]}
-                    onPress={() => openDateEditor(isPrivate ? 'private' : 'class', item.id, date)}
-                  ><Text style={styles.sessionActionText}>Edit Date</Text></TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.sessionActionButton, styles.presentActionButton]}
-                    onPress={() => isPrivate ? setPrivateAttendance(item.id, true) : setClassAttendance(item.id, true)}
-                  ><Text style={styles.sessionActionText}>Present</Text></TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.sessionActionButton, styles.absentActionButton]}
-                    onPress={() => isPrivate ? setPrivateAttendance(item.id, false) : setClassAttendance(item.id, false)}
-                  ><Text style={styles.sessionActionText}>Absent</Text></TouchableOpacity>
-                  {!isPrivate && (
+                {!item.isMissingBooking && (
+                  <View style={styles.sessionActions}>
                     <TouchableOpacity
-                      style={[styles.sessionActionButton, styles.cancelActionButton]}
-                      onPress={() => cancelClassSession(item.id)}
-                    ><Text style={styles.sessionActionText}>Cancel</Text></TouchableOpacity>
-                  )}
-                  {isPrivate && (
+                      style={[styles.sessionActionButton, styles.editActionButton]}
+                      onPress={() => openDateEditor(isPrivate ? 'private' : 'class', item.id, date)}
+                    ><Text style={styles.sessionActionText}>Edit Date</Text></TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.sessionActionButton, styles.deleteActionButton]}
-                      onPress={() => deletePrivateSession(item.id)}
-                    ><Text style={styles.sessionActionText}>Delete</Text></TouchableOpacity>
-                  )}
-                </View>
+                      style={[styles.sessionActionButton, styles.presentActionButton]}
+                      onPress={() => isPrivate ? setPrivateAttendance(item.id, true) : setClassAttendance(item.id, true)}
+                    ><Text style={styles.sessionActionText}>Present</Text></TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sessionActionButton, styles.absentActionButton]}
+                      onPress={() => isPrivate ? setPrivateAttendance(item.id, false) : setClassAttendance(item.id, false)}
+                    ><Text style={styles.sessionActionText}>Absent</Text></TouchableOpacity>
+                    {!isPrivate && (
+                      <TouchableOpacity
+                        style={[styles.sessionActionButton, styles.cancelActionButton]}
+                        onPress={() => cancelClassSession(item.id)}
+                      ><Text style={styles.sessionActionText}>Cancel</Text></TouchableOpacity>
+                    )}
+                    {isPrivate && (
+                      <TouchableOpacity
+                        style={[styles.sessionActionButton, styles.deleteActionButton]}
+                        onPress={() => deletePrivateSession(item.id)}
+                      ><Text style={styles.sessionActionText}>Delete</Text></TouchableOpacity>
+                    )}
+                  </View>
+                )}
               </View>
             );
           })}
