@@ -444,6 +444,71 @@ export default function AdminUserProgressScreen() {
     await reloadData();
   };
 
+  const deleteSelectedBundle = async () => {
+    if (!selectedBundle) return;
+
+    const confirmDelete = typeof window !== 'undefined'
+      ? window.confirm('Delete this complete bundle? This will remove it from active progress, but one-by-one session actions will remain available for other bundles.')
+      : true;
+
+    if (!confirmDelete) return;
+
+    if (selectedBundle.type === 'class') {
+      if (selectedBundle.subscription?.id) {
+        const { error: subscriptionError } = await supabase
+          .from('monthly_subscriptions')
+          .update({ status: 'cancelled' })
+          .eq('id', selectedBundle.subscription.id);
+
+        if (subscriptionError) {
+          Alert.alert('Error', subscriptionError.message);
+          return;
+        }
+      }
+
+      const bookingIds = selectedBundle.items
+        .filter((item: any) => !item.isMissingBooking && item.id)
+        .map((item: any) => item.id);
+
+      if (bookingIds.length > 0) {
+        const { error: bookingsError } = await supabase
+          .from('bookings')
+          .update({ status: 'cancelled' })
+          .in('id', bookingIds);
+
+        if (bookingsError) {
+          Alert.alert('Error', bookingsError.message);
+          return;
+        }
+      }
+    }
+
+    if (selectedBundle.type === 'private') {
+      const privateBookingIds = Array.from(
+        new Set(
+          selectedBundle.items
+            .map((item: any) => item.booking?.id || item.private_booking_id)
+            .filter(Boolean)
+        )
+      );
+
+      if (privateBookingIds.length > 0) {
+        const { error: privateError } = await supabase
+          .from('private_bookings')
+          .update({ status: 'cancelled' })
+          .in('id', privateBookingIds);
+
+        if (privateError) {
+          Alert.alert('Error', privateError.message);
+          return;
+        }
+      }
+    }
+
+    setSelectedBundleId('active');
+    await reloadData();
+  };
+
   if (loading) {
     return (
       <View style={styles.emptyState}>
@@ -529,7 +594,21 @@ export default function AdminUserProgressScreen() {
         </View>
 
         <View style={styles.sectionContent}>
-          <View style={styles.sectionHeader}><Clock color={Colors.primary} size={20} /><Text style={styles.sectionTitle}>Selected Bundle Sessions</Text></View>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderTitle}>
+              <Clock color={Colors.primary} size={20} />
+              <Text style={styles.sectionTitle}>Selected Bundle Sessions</Text>
+            </View>
+
+            {!!selectedBundle && (
+              <TouchableOpacity
+                style={styles.deleteBundleButton}
+                onPress={deleteSelectedBundle}
+              >
+                <Text style={styles.deleteBundleButtonText}>Delete Complete Bundle</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {!selectedBundle ? (
             <Text style={styles.noDataText}>No active sessions. Old bundles are in history.</Text>
           ) : selectedBundle.items.map((item: any) => {
@@ -669,8 +748,11 @@ const styles = StyleSheet.create({
   usageNumber: { fontSize: 22, fontWeight: '900', color: Colors.text, marginTop: 6 },
   usageLabel: { fontSize: 12, color: Colors.textLight, fontWeight: '800', marginTop: 2 },
   sectionContent: { backgroundColor: Colors.white, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#E2E8F0' },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 },
+  sectionHeaderTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   sectionTitle: { fontSize: 18, fontWeight: '900', color: Colors.text },
+  deleteBundleButton: { backgroundColor: Colors.danger, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10 },
+  deleteBundleButtonText: { color: Colors.white, fontWeight: '900', fontSize: 11 },
   noDataText: { color: Colors.textLight, fontWeight: '700' },
   sessionHistoryItem: { flexDirection: 'row', gap: 10, backgroundColor: '#F8FAFC', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   classItemName: { color: Colors.text, fontSize: 15, fontWeight: '900' },
