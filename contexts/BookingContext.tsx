@@ -49,6 +49,31 @@ type CreatePrivateBookingResult = {
   sessions?: PrivateSession[];
 };
 
+type MonthlyBookingSlot = {
+  classId: string;
+  day: string;
+};
+
+type CreateMonthlyBookingParams = {
+  profileId: string;
+  childId: string;
+  packageHours: number;
+  weeklyHours: number;
+  startDate: string;
+  selectedSlots: MonthlyBookingSlot[];
+  bundleCategory?: 'regular' | 'competition';
+  maxDaysPerWeek?: number;
+  maxHoursPerDay?: number;
+  unlimitedDays?: boolean;
+  carryExtraHours?: boolean;
+};
+
+type CreateMonthlyBookingResult = {
+  success: boolean;
+  error?: string;
+  subscriptionId?: string;
+};
+
 const formatDateOnly = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -316,6 +341,117 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
     [cancelBookingMutation, refetchBookings]
   );
 
+  const createMonthlyBooking = useCallback(
+    async ({
+      profileId,
+      childId,
+      packageHours,
+      weeklyHours,
+      startDate,
+      selectedSlots,
+      bundleCategory = 'regular',
+      maxDaysPerWeek = 0,
+      maxHoursPerDay = 0,
+      unlimitedDays = false,
+      carryExtraHours = true,
+    }: CreateMonthlyBookingParams): Promise<CreateMonthlyBookingResult> => {
+      try {
+        if (!profileId || !childId) {
+          return { success: false, error: 'Select a child before booking.' };
+        }
+
+        if (!packageHours || packageHours <= 0) {
+          return { success: false, error: 'Package hours are required.' };
+        }
+
+        if (!weeklyHours || weeklyHours <= 0) {
+          return { success: false, error: 'Weekly hours are required.' };
+        }
+
+        if (!startDate) {
+          return { success: false, error: 'Start date is required.' };
+        }
+
+        if (!selectedSlots || selectedSlots.length === 0) {
+          return { success: false, error: 'Select at least one class slot.' };
+        }
+
+        const normalizedStart = new Date(`${startDate}T12:00:00`);
+        const endDate = new Date(normalizedStart);
+        endDate.setDate(endDate.getDate() + 27);
+
+        const { data: subscription, error: subscriptionError } = await supabase
+          .from('monthly_subscriptions')
+          .insert({
+            profile_id: profileId,
+            child_id: childId,
+            package_hours: Math.floor(Number(packageHours)),
+            weekly_hours: Math.floor(Number(weeklyHours)),
+            start_date: formatDateOnly(normalizedStart),
+            end_date: formatDateOnly(endDate),
+            status: 'active',
+            bundle_category: bundleCategory,
+            max_days_per_week: maxDaysPerWeek,
+            max_hours_per_day: maxHoursPerDay,
+            unlimited_days: unlimitedDays,
+            carry_extra_hours: carryExtraHours,
+          })
+          .select()
+          .single();
+
+        if (subscriptionError) throw subscriptionError;
+
+        const bookingsToInsert: any[] = [];
+
+        selectedSlots.forEach((slot) => {
+          const selectedWeekdayNumber = normalizeWeekdayNumber(slot.day);
+          const current = new Date(normalizedStart);
+          const dates: Date[] = [];
+
+          while (dates.length < 4) {
+            if (current.getDay() === selectedWeekdayNumber) {
+              dates.push(new Date(current));
+            }
+
+            current.setDate(current.getDate() + 1);
+          }
+
+          dates.forEach((date) => {
+            bookingsToInsert.push({
+              profile_id: profileId,
+              child_id: childId,
+              class_id: slot.classId,
+              booking_date: formatDateOnly(date),
+              status: 'confirmed',
+            });
+          });
+        });
+
+        const { error: bookingsError } = await supabase
+          .from('bookings')
+          .insert(bookingsToInsert);
+
+        if (bookingsError) throw bookingsError;
+
+        await refetchBookings();
+
+        return {
+          success: true,
+          subscriptionId: subscription.id,
+        };
+      } catch (error) {
+        console.error('Failed to create monthly booking:', error);
+
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to create monthly booking',
+        };
+      }
+    },
+    [refetchBookings]
+  );
+
+
   const createPrivateBooking = useCallback(
     async (
       profileId: string,
@@ -509,6 +645,7 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
       bookClass,
       bookMultipleDates,
       cancelBooking,
+      createMonthlyBooking,
       createPrivateBooking,
       markPrivateAttendance,
       getStudentBookings,
@@ -528,6 +665,7 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
       bookClass,
       bookMultipleDates,
       cancelBooking,
+      createMonthlyBooking,
       createPrivateBooking,
       markPrivateAttendance,
       getStudentBookings,
