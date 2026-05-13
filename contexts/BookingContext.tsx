@@ -341,6 +341,44 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
     [cancelBookingMutation, refetchBookings]
   );
 
+  const replaceClassSession = useCallback(
+    async (bookingId: string, classId: string, bookingDate: string) => {
+      try {
+        if (!bookingId || !classId || !bookingDate) {
+          return {
+            success: false,
+            error: 'Booking, class, and date are required.',
+          };
+        }
+
+        const { error } = await supabase
+          .from('bookings')
+          .update({
+            class_id: classId,
+            booking_date: bookingDate,
+            attended: null,
+            attendance_marked_at: null,
+            status: 'confirmed',
+          })
+          .eq('id', bookingId);
+
+        if (error) throw error;
+
+        await refetchBookings();
+
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to replace class session:', error);
+
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to replace class session',
+        };
+      }
+    },
+    [refetchBookings]
+  );
+
   const createMonthlyBooking = useCallback(
     async ({
       profileId,
@@ -645,6 +683,7 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
       bookClass,
       bookMultipleDates,
       cancelBooking,
+      replaceClassSession,
       createMonthlyBooking,
       createPrivateBooking,
       markPrivateAttendance,
@@ -665,6 +704,7 @@ export const [BookingProvider, useBooking] = createContextHook(() => {
       bookClass,
       bookMultipleDates,
       cancelBooking,
+      replaceClassSession,
       createMonthlyBooking,
       createPrivateBooking,
       markPrivateAttendance,
