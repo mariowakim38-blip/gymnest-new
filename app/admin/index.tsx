@@ -419,6 +419,16 @@ export default function AdminPanel() {
     setAdminClassesLoading(false);
   };
 
+  const refreshAdminPageData = async () => {
+    await Promise.all([
+      refreshUsers(),
+      refreshBookings(),
+      refreshAttendanceRecords(),
+      refreshPrivateAttendanceSessions(),
+      refreshAdminClasses(),
+    ]);
+  };
+
   useEffect(() => {
     if (isAdmin) {
       refreshUsers();
@@ -1036,7 +1046,7 @@ export default function AdminPanel() {
         return;
       }
 
-      await refreshBookings();
+      await refreshAdminPageData();
     };
 
     if (Platform.OS === "web") {
@@ -1150,7 +1160,7 @@ export default function AdminPanel() {
     }
 
     updateEditingBookingItem(bookingId, { booking_date: newDate });
-    await refreshBookings();
+    await refreshAdminPageData();
 
     const msg = "Booking date updated.";
     if (Platform.OS === "web") alert(msg);
@@ -1178,7 +1188,7 @@ export default function AdminPanel() {
     }
 
     removeEditingBookingItem(bookingId);
-    await refreshBookings();
+    await refreshAdminPageData();
   };
 
   const handleDeleteBookingDate = async (bookingId: string) => {
@@ -1196,7 +1206,7 @@ export default function AdminPanel() {
       }
 
       removeEditingBookingItem(bookingId);
-      await refreshBookings();
+      await refreshAdminPageData();
     };
 
     if (Platform.OS === "web") {
@@ -1229,7 +1239,7 @@ export default function AdminPanel() {
       }),
     );
 
-    await refreshBookings();
+    await refreshAdminPageData();
     setEditingBooking(null);
   };
 
@@ -1248,7 +1258,7 @@ export default function AdminPanel() {
       return;
     }
 
-    await refreshBookings();
+    await refreshAdminPageData();
   };
 
   const handleMarkPrivateAttendance = async (
@@ -1272,7 +1282,7 @@ export default function AdminPanel() {
       return;
     }
 
-    await refreshPrivateAttendanceSessions();
+    await refreshAdminPageData();
   };
 
   const makeupChildOptions = allUsers
@@ -1307,41 +1317,68 @@ export default function AdminPanel() {
       !selectedAttendanceClassForDay ||
       !selectedAttendanceDate
     ) {
-      const msg = "Select a student before adding make-up attendance.";
+      const msg = "Select a student before replacing a session.";
       if (Platform.OS === "web") alert(msg);
       else Alert.alert("Missing student", msg);
       return;
     }
 
-    const { data, error } = await supabase
-      .from("attendance_records")
-      .insert({
-        profile_id: selectedMakeupChild.profile_id,
-        child_id: selectedMakeupChild.id,
-        attended_class_id: selectedAttendanceClassForDay.id,
-        attended_date: selectedAttendanceDate,
-        attendance_type: "makeup",
-        status: "present",
-        note: makeupNote.trim() || "Make-up class",
-      })
-      .select()
-      .single();
+    const { data: candidateBookings, error: candidateError } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("child_id", selectedMakeupChild.id)
+      .neq("status", "cancelled")
+      .order("booking_date", { ascending: true });
 
-    if (error) {
-      const errorMessage = error.message || "Failed to add make-up student.";
+    if (candidateError) {
+      const errorMessage = candidateError.message || "Failed to find an existing session to replace.";
       if (Platform.OS === "web") alert(errorMessage);
       else Alert.alert("Error", errorMessage);
       return;
     }
 
-    if (data) {
-      setAttendanceRecords((prev) => [data, ...prev]);
+    const replacementBooking = (candidateBookings ?? []).find((booking: any) => {
+      const sameDate = String(booking.booking_date) === String(selectedAttendanceDate);
+      const sameClass = String(booking.class_id) === String(selectedAttendanceClassForDay.id);
+      const alreadyMarkedPresent = booking.attended === true;
+      return !(sameDate && sameClass) && !alreadyMarkedPresent;
+    });
+
+    if (!replacementBooking) {
+      const msg = "No available existing session was found to replace. Make-up must replace one existing session, not create an extra one.";
+      if (Platform.OS === "web") alert(msg);
+      else Alert.alert("No session to replace", msg);
+      return;
     }
+
+    const { error } = await supabase
+      .from("bookings")
+      .update({
+        class_id: selectedAttendanceClassForDay.id,
+        booking_date: selectedAttendanceDate,
+        attended: true,
+        attendance_marked_at: new Date().toISOString(),
+        status: "confirmed",
+      })
+      .eq("id", replacementBooking.id);
+
+    if (error) {
+      const errorMessage = error.message || "Failed to replace session with make-up.";
+      if (Platform.OS === "web") alert(errorMessage);
+      else Alert.alert("Error", errorMessage);
+      return;
+    }
+
+    await refreshAdminPageData();
 
     setShowMakeupModal(false);
     setSelectedMakeupChild(null);
     setMakeupSearch("");
     setMakeupNote("");
+
+    const msg = "Make-up saved. One existing session was replaced and marked present.";
+    if (Platform.OS === "web") alert(msg);
+    else Alert.alert("Success", msg);
   };
 
   const handleDeleteMakeupRecord = async (recordId: string) => {
@@ -2920,7 +2957,7 @@ export default function AdminPanel() {
               </View>
 
               <TextInput
-                placeholder="Search student or parent..."
+                placeholder="Search student, parent, or phone..."
                 style={styles.input}
                 value={bookingSearch}
                 onChangeText={setBookingSearch}
@@ -3594,7 +3631,7 @@ export default function AdminPanel() {
                   </View>
 
                   <TextInput
-                    placeholder="Search student or parent..."
+                    placeholder="Search student, parent, or phone..."
                     style={styles.input}
                     value={attendanceSearch}
                     onChangeText={setAttendanceSearch}
@@ -3718,7 +3755,7 @@ export default function AdminPanel() {
                         >
                           <Plus color={Colors.white} size={16} />
                           <Text style={styles.makeupAddButtonText}>
-                            Add Make-Up Student
+                            Replace Session / Make-Up
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -4435,7 +4472,7 @@ export default function AdminPanel() {
         <View style={styles.modal}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Make-Up Student</Text>
+              <Text style={styles.modalTitle}>Replace Session / Make-Up</Text>
               <TouchableOpacity onPress={() => setShowMakeupModal(false)}>
                 <X color={Colors.darkGray} size={24} />
               </TouchableOpacity>
