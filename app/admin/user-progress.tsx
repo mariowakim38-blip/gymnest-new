@@ -339,6 +339,32 @@ export default function AdminUserProgressScreen() {
     reloadData();
   }, [childId]);
 
+  useEffect(() => {
+    if (!childId) return;
+
+    const channel = supabase
+      .channel("admin-user-progress-live-refresh")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bookings", filter: `child_id=eq.${childId}` },
+        async () => {
+          await reloadData();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "monthly_subscriptions", filter: `child_id=eq.${childId}` },
+        async () => {
+          await reloadData();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [childId]);
+
   const classBundles = useMemo(() => getClassBundles(bookings, monthlySubscriptions), [bookings, monthlySubscriptions]);
   const privateBundles = useMemo(() => getPrivateBundles(privateBookings), [privateBookings]);
   const bundles = progressType === 'class' ? classBundles : privateBundles;
