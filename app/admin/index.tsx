@@ -212,6 +212,9 @@ export default function AdminPanel() {
   const [bookingDateDrafts, setBookingDateDrafts] = useState<
     Record<string, string>
   >({});
+  const [bookingClassDrafts, setBookingClassDrafts] = useState<
+    Record<string, string>
+  >({});
 
   const refreshUsers = async () => {
     if (!isAdmin) return;
@@ -1081,6 +1084,13 @@ export default function AdminPanel() {
       }, {}),
     );
 
+    setBookingClassDrafts(
+      validBookings.reduce((acc: Record<string, string>, booking: any) => {
+        acc[String(booking.id)] = String(booking.classId || booking.class_id || "");
+        return acc;
+      }, {}),
+    );
+
     setBookingForm({
       booking_date: firstBooking.classDate || firstBooking.bookingDate || "",
       class_id: firstBooking.classId || "",
@@ -1105,6 +1115,8 @@ export default function AdminPanel() {
                 patch.booking_date ?? patch.bookingDate ?? booking.bookingDate,
               classDate:
                 patch.booking_date ?? patch.classDate ?? booking.classDate,
+              classId:
+                patch.class_id ?? patch.classId ?? booking.classId,
             }
           : booking,
       );
@@ -1139,6 +1151,7 @@ export default function AdminPanel() {
 
   const handleUpdateBookingDate = async (bookingId: string) => {
     const newDate = String(bookingDateDrafts[bookingId] || "").trim();
+    const newClassId = String(bookingClassDrafts[bookingId] || "").trim();
 
     if (!newDate) {
       const msg = "Please choose a booking date.";
@@ -1147,22 +1160,41 @@ export default function AdminPanel() {
       return;
     }
 
+    if (!newClassId) {
+      const msg = "Please choose the make-up class.";
+      if (Platform.OS === "web") alert(msg);
+      else Alert.alert("Missing class", msg);
+      return;
+    }
+
     const { error } = await supabase
       .from("bookings")
-      .update({ booking_date: newDate })
+      .update({
+        booking_date: newDate,
+        class_id: newClassId,
+        attended: null,
+        attendance_marked_at: null,
+        status: "confirmed",
+      })
       .eq("id", bookingId);
 
     if (error) {
-      const errorMessage = error.message || "Failed to update booking date.";
+      const errorMessage = error.message || "Failed to update make-up session.";
       if (Platform.OS === "web") alert(errorMessage);
       else Alert.alert("Error", errorMessage);
       return;
     }
 
-    updateEditingBookingItem(bookingId, { booking_date: newDate });
+    updateEditingBookingItem(bookingId, {
+      booking_date: newDate,
+      class_id: newClassId,
+      attended: null,
+      status: "confirmed",
+    });
+
     await refreshAdminPageData();
 
-    const msg = "Booking date updated.";
+    const msg = "Make-up session updated. The existing session was replaced with the selected date and class.";
     if (Platform.OS === "web") alert(msg);
     else Alert.alert("Success", msg);
   };
@@ -1232,9 +1264,17 @@ export default function AdminPanel() {
         const newDate = String(bookingDateDrafts[booking.id] || "").trim();
         if (!newDate) return Promise.resolve();
 
+        const newClassId = String(bookingClassDrafts[booking.id] || booking.classId || "").trim();
+
         return supabase
           .from("bookings")
-          .update({ booking_date: newDate })
+          .update({
+            booking_date: newDate,
+            class_id: newClassId || booking.classId,
+            attended: null,
+            attendance_marked_at: null,
+            status: "confirmed",
+          })
           .eq("id", booking.id);
       }),
     );
@@ -4658,6 +4698,50 @@ export default function AdminPanel() {
                             }))
                           }
                           placeholder="YYYY-MM-DD"
+                        />
+                      )}
+
+                      <Text style={styles.bookingManageDateSubtext}>
+                        Make-up class
+                      </Text>
+
+                      {Platform.OS === "web" ? (
+                        <select
+                          value={bookingClassDrafts[bookingId] || String(booking.classId || "")}
+                          onChange={(event: any) => {
+                            const nextClassId = event?.target?.value || "";
+                            setBookingClassDrafts((current) => ({
+                              ...current,
+                              [bookingId]: nextClassId,
+                            }));
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: 12,
+                            borderRadius: 12,
+                            border: "1px solid #D1D5DB",
+                            fontSize: 15,
+                            marginBottom: 10,
+                          }}
+                        >
+                          <option value="">Choose class</option>
+                          {adminClasses.map((cls: any) => (
+                            <option key={cls.id} value={String(cls.id)}>
+                              {cls.day} • {cls.time} • {cls.name || "Gymnastics Class"} {cls.age_group ? `- ${cls.age_group}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <TextInput
+                          style={styles.input}
+                          value={bookingClassDrafts[bookingId] || String(booking.classId || "")}
+                          onChangeText={(text) =>
+                            setBookingClassDrafts((current) => ({
+                              ...current,
+                              [bookingId]: text,
+                            }))
+                          }
+                          placeholder="Class ID"
                         />
                       )}
 
