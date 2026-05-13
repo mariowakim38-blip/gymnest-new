@@ -39,6 +39,7 @@ type DateEditTarget = {
   type: 'class' | 'private';
   id: string;
   currentDate: string;
+  currentClassId?: string;
 } | null;
 
 const emptyProgress: ProgressData = {
@@ -249,6 +250,8 @@ export default function AdminUserProgressScreen() {
   const [selectedBundleId, setSelectedBundleId] = useState<string>('active');
   const [dateEditTarget, setDateEditTarget] = useState<DateEditTarget>(null);
   const [dateDraft, setDateDraft] = useState<string>('');
+  const [classDraft, setClassDraft] = useState<string>('');
+  const [adminClasses, setAdminClasses] = useState<any[]>([]);
   const [savingDate, setSavingDate] = useState(false);
 
   const reloadData = async () => {
@@ -288,6 +291,19 @@ export default function AdminUserProgressScreen() {
       setBookings([]);
     } else {
       setBookings(bookingsData ?? []);
+    }
+
+    const { data: classesData, error: classesError } = await supabase
+      .from('classes')
+      .select('*')
+      .order('day_of_week', { ascending: true })
+      .order('time', { ascending: true });
+
+    if (classesError) {
+      console.error('Admin progress classes error:', classesError);
+      setAdminClasses([]);
+    } else {
+      setAdminClasses(classesData ?? []);
     }
 
     const { data: subscriptionData, error: subscriptionError } = await supabase
@@ -333,15 +349,22 @@ export default function AdminUserProgressScreen() {
       : bundles.find((bundle) => bundle.id === selectedBundleId) || activeBundle;
   const progress = calculateProgress(selectedBundle);
 
-  const openDateEditor = (type: 'class' | 'private', id: string, currentDate?: string) => {
+  const openDateEditor = (
+    type: 'class' | 'private',
+    id: string,
+    currentDate?: string,
+    currentClassId?: string
+  ) => {
     const cleanDate = formatDateInputValue(currentDate);
-    setDateEditTarget({ type, id, currentDate: cleanDate });
+    setDateEditTarget({ type, id, currentDate: cleanDate, currentClassId });
     setDateDraft(cleanDate);
+    setClassDraft(currentClassId || '');
   };
 
   const closeDateEditor = () => {
     setDateEditTarget(null);
     setDateDraft('');
+    setClassDraft('');
     setSavingDate(false);
   };
 
@@ -349,21 +372,36 @@ export default function AdminUserProgressScreen() {
     if (!dateEditTarget) return;
 
     const cleanDate = String(dateDraft || '').trim();
+    const cleanClassId = String(classDraft || '').trim();
 
     if (!cleanDate) {
       Alert.alert('Missing date', 'Please choose a date.');
       return;
     }
 
+    if (dateEditTarget.type === 'class' && !cleanClassId) {
+      Alert.alert('Missing class', 'Please choose the make-up class.');
+      return;
+    }
+
     setSavingDate(true);
 
     const table = dateEditTarget.type === 'class' ? 'bookings' : 'private_booking_sessions';
-    const column = dateEditTarget.type === 'class' ? 'booking_date' : 'session_date';
 
     const updatePayload =
       dateEditTarget.type === 'class'
-        ? { [column]: cleanDate, attended: null, attendance_marked_at: null }
-        : { [column]: cleanDate, attended: null, attendance_marked_at: null };
+        ? {
+            booking_date: cleanDate,
+            class_id: cleanClassId,
+            attended: null,
+            attendance_marked_at: null,
+            status: 'confirmed',
+          }
+        : {
+            session_date: cleanDate,
+            attended: null,
+            attendance_marked_at: null,
+          };
 
     const { error } = await supabase
       .from(table)
@@ -638,7 +676,7 @@ export default function AdminUserProgressScreen() {
                   <View style={styles.sessionActions}>
                     <TouchableOpacity
                       style={[styles.sessionActionButton, styles.editActionButton]}
-                      onPress={() => openDateEditor(isPrivate ? 'private' : 'class', item.id, date)}
+                      onPress={() => openDateEditor(isPrivate ? 'private' : 'class', item.id, date, item.class_id)}
                     ><Text style={styles.sessionActionText}>Make-Up / Edit Date</Text></TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.sessionActionButton, styles.presentActionButton]}
@@ -699,6 +737,33 @@ export default function AdminUserProgressScreen() {
                 marginBottom: 18,
               }}
             />
+
+            {dateEditTarget?.type === 'class' && (
+              <>
+                <Text style={styles.dateModalLabel}>Choose the make-up class</Text>
+
+                <select
+                  value={classDraft}
+                  onChange={(e) => setClassDraft(e.currentTarget.value)}
+                  style={{
+                    width: '100%',
+                    padding: 14,
+                    borderRadius: 12,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 16,
+                    marginTop: 10,
+                    marginBottom: 18,
+                  }}
+                >
+                  <option value="">Choose class</option>
+                  {adminClasses.map((cls: any) => (
+                    <option key={cls.id} value={String(cls.id)}>
+                      {cls.day} • {cls.time} • {cls.name || 'Gymnastics Class'} {cls.age_group ? `- ${cls.age_group}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
 
             <View style={styles.dateModalActions}>
               <TouchableOpacity
