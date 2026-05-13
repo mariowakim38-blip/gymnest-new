@@ -360,9 +360,14 @@ export default function AdminUserProgressScreen() {
     const table = dateEditTarget.type === 'class' ? 'bookings' : 'private_booking_sessions';
     const column = dateEditTarget.type === 'class' ? 'booking_date' : 'session_date';
 
+    const updatePayload =
+      dateEditTarget.type === 'class'
+        ? { [column]: cleanDate, attended: null, attendance_marked_at: null }
+        : { [column]: cleanDate, attended: null, attendance_marked_at: null };
+
     const { error } = await supabase
       .from(table)
-      .update({ [column]: cleanDate })
+      .update(updatePayload)
       .eq('id', dateEditTarget.id);
 
     setSavingDate(false);
@@ -448,7 +453,7 @@ export default function AdminUserProgressScreen() {
     if (!selectedBundle) return;
 
     const confirmDelete = typeof window !== 'undefined'
-      ? window.confirm('Delete this complete bundle? This will remove it from active progress, but one-by-one session actions will remain available for other bundles.')
+      ? window.confirm('Delete this complete bundle? This cancels all sessions in this bundle. You can still use one-by-one actions on other bundles.')
       : true;
 
     if (!confirmDelete) return;
@@ -634,7 +639,7 @@ export default function AdminUserProgressScreen() {
                     <TouchableOpacity
                       style={[styles.sessionActionButton, styles.editActionButton]}
                       onPress={() => openDateEditor(isPrivate ? 'private' : 'class', item.id, date)}
-                    ><Text style={styles.sessionActionText}>Edit Date</Text></TouchableOpacity>
+                    ><Text style={styles.sessionActionText}>Make-Up / Edit Date</Text></TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.sessionActionButton, styles.presentActionButton]}
                       onPress={() => isPrivate ? setPrivateAttendance(item.id, true) : setClassAttendance(item.id, true)}
@@ -672,13 +677,13 @@ export default function AdminUserProgressScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.dateModal}>
             <View style={styles.dateModalHeader}>
-              <Text style={styles.dateModalTitle}>Edit Session Date</Text>
+              <Text style={styles.dateModalTitle}>Make-Up / Edit Session Date</Text>
               <TouchableOpacity onPress={closeDateEditor} style={styles.closeButton}>
                 <X color={Colors.text} size={22} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.dateModalLabel}>Choose the new session date</Text>
+            <Text style={styles.dateModalLabel}>Choose the new date. This replaces the selected existing session; it does not create an extra session.</Text>
 
             <input
               type="date"
