@@ -443,6 +443,39 @@ export default function AdminPanel() {
       refreshAdminClasses();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const channel = supabase
+      .channel("admin-bookings-live-refresh")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bookings" },
+        async () => {
+          await refreshAdminPageData();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "attendance_records" },
+        async () => {
+          await refreshAttendanceRecords();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "private_booking_sessions" },
+        async () => {
+          await refreshPrivateAttendanceSessions();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin]);
   const {
     data: privateSessions = [],
     isLoading: sessionsLoading,
@@ -1264,17 +1297,9 @@ export default function AdminPanel() {
         const newDate = String(bookingDateDrafts[booking.id] || "").trim();
         if (!newDate) return Promise.resolve();
 
-        const newClassId = String(bookingClassDrafts[booking.id] || booking.classId || "").trim();
-
         return supabase
           .from("bookings")
-          .update({
-            booking_date: newDate,
-            class_id: newClassId || booking.classId,
-            attended: null,
-            attendance_marked_at: null,
-            status: "confirmed",
-          })
+          .update({ booking_date: newDate })
           .eq("id", booking.id);
       }),
     );
@@ -4755,7 +4780,7 @@ export default function AdminPanel() {
                           activeOpacity={0.85}
                         >
                           <Text style={styles.bookingManageActionText}>
-                            Save Date
+                            Save Make-Up
                           </Text>
                         </TouchableOpacity>
 
